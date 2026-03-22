@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Breaking News Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1>Breaking News</h1>
+      <span class="connection-dot" id="connectionDot" title="Disconnected"></span>
+    </div>
+  </header>
+
+  <main>
+    <aside class="sidebar">
+      <section class="add-source">
+        <h2>Add Feed</h2>
+        <form id="addSourceForm">
+          <input type="url" id="feedUrl" placeholder="https://example.com/rss" required>
+          <button type="submit" id="addBtn">Add</button>
+        </form>
+        <p class="error" id="addError"></p>
+      </section>
+
+      <section class="sources-list">
+        <h2>Sources</h2>
+        <ul id="sourcesList"></ul>
+        <p class="empty-state" id="sourcesEmpty">No feeds added yet</p>
+      </section>
+    </aside>
+
+    <section class="feed" id="feed">
+      <p class="empty-state" id="feedEmpty">No articles yet. Add an RSS feed to get started.</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+node_modules/
+news.db
+news.db-shm
+news.db-wal
