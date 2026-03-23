@@ -1,42 +1,279 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Breaking News Dashboard</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Breaking News</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;
+  --green:#3fb950;--red:#f85149;--orange:#d29922
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+h1{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--red);transition:background .4s}
+.dot.on{background:var(--green)}
+.mute{background:none;border:none;cursor:pointer;font-size:20px;padding:2px 4px;line-height:1;-webkit-tap-highlight-color:transparent}
+.layout{display:grid;grid-template-columns:300px 1fr;flex:1;min-height:0}
+@media(max-width:700px){
+  body{height:auto;overflow:auto}
+  .layout{grid-template-columns:1fr;height:auto}
+  .sidebar,.feed{overflow:visible;height:auto}
+}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px}
+.feed{overflow-y:auto;padding:14px;display:flex;flex-direction:column}
+.label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.irow{display:flex;gap:6px}
+input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px;outline:none;min-width:0;-webkit-appearance:none}
+input:focus{border-color:var(--accent)}
+.btn{background:#1f6feb;color:#fff;border:1px solid #1f6feb;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+.btn:active{background:#388bfd}
+.btn:disabled{opacity:.6}
+.err{color:var(--red);font-size:12px;margin-top:5px;display:none}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:sp .6s linear infinite;vertical-align:middle}
+@keyframes sp{to{transform:rotate(360deg)}}
+.src{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:7px}
+.src.err-state{border-color:rgba(248,81,73,.35)}
+.src-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px}
+.src-name{font-weight:600;font-size:13px;word-break:break-word;line-height:1.3}
+.del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:0;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+.del:hover{color:var(--red)}
+.badges{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+.badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600}
+.badge.rss{background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3)}
+.badge.twitter{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
+.badge.error{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.3)}
+.src-meta{font-size:11px;color:var(--muted);margin-top:4px}
+.src-errmsg{font-size:11px;color:var(--red);margin-top:3px;word-break:break-word}
+.feed-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-shrink:0}
+#arts{display:flex;flex-direction:column;gap:7px}
+.art{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;animation:fi .25s ease-out;transition:border-color .15s}
+.art:hover{border-color:rgba(88,166,255,.5)}
+@keyframes fi{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.art-link{color:var(--text);text-decoration:none;font-weight:500;font-size:14px;line-height:1.4;display:block;margin-bottom:6px}
+.art-link:hover{color:var(--accent)}
+.art-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.art-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.art-time{font-size:11px;color:var(--muted)}
+.art-desc{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.empty{text-align:center;color:var(--muted);padding:48px 16px}
+.empty-i{font-size:36px;margin-bottom:8px}
+footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 16px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted);flex-shrink:0}
+</style>
 </head>
 <body>
-  <header>
-    <div class="header-left">
-      <h1>Breaking News</h1>
-      <span class="connection-dot" id="connectionDot" title="Disconnected"></span>
+<header>
+  <h1><span class="dot" id="dot"></span>Breaking News</h1>
+  <button class="mute" id="muteBtn" title="Toggle sound alerts">🔔</button>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div>
+      <div class="label">Add Source</div>
+      <div class="irow">
+        <input id="urlIn" type="text" placeholder="RSS URL or x.com/username" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"/>
+        <button class="btn" id="addBtn">Add</button>
+      </div>
+      <div class="err" id="addErr"></div>
     </div>
-  </header>
+    <div>
+      <div class="label">Sources (<span id="srcCount">0</span>)</div>
+      <div id="srcList"></div>
+    </div>
+  </aside>
 
-  <main>
-    <aside class="sidebar">
-      <section class="add-source">
-        <h2>Add Feed</h2>
-        <form id="addSourceForm">
-          <input type="url" id="feedUrl" placeholder="https://example.com/rss" required>
-          <button type="submit" id="addBtn">Add</button>
-        </form>
-        <p class="error" id="addError"></p>
-      </section>
+  <section class="feed">
+    <div class="feed-top">
+      <div class="label" style="margin:0">Live Feed</div>
+    </div>
+    <div id="arts">
+      <div class="empty"><div class="empty-i">📡</div>Add a source to start</div>
+    </div>
+  </section>
+</div>
 
-      <section class="sources-list">
-        <h2>Sources</h2>
-        <ul id="sourcesList"></ul>
-        <p class="empty-state" id="sourcesEmpty">No feeds added yet</p>
-      </section>
-    </aside>
+<footer>
+  <span id="artCount">0 articles</span>
+  <span id="lastUp">—</span>
+</footer>
 
-    <section class="feed" id="feed">
-      <p class="empty-state" id="feedEmpty">No articles yet. Add an RSS feed to get started.</p>
-    </section>
-  </main>
+<script>
+let muted=false,wsDelay=1000,ws,audioCtx,total=0;
+const palette=['#58a6ff','#3fb950','#d29922','#bc8cff','#fa7970','#79c0ff','#ffa657'];
+const cmap={};let ci=0;
+function getColor(n){if(!cmap[n])cmap[n]=palette[ci++%palette.length];return cmap[n];}
 
-  <script src="app.js"></script>
+document.getElementById('muteBtn').onclick=()=>{
+  muted=!muted;
+  document.getElementById('muteBtn').textContent=muted?'🔕':'🔔';
+};
+
+function chime(){
+  if(muted)return;
+  try{
+    if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.connect(g);g.connect(audioCtx.destination);
+    o.type='sine';
+    o.frequency.setValueAtTime(1047,audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(523,audioCtx.currentTime+0.2);
+    g.gain.setValueAtTime(0.25,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.4);
+    o.start();o.stop(audioCtx.currentTime+0.4);
+  }catch(e){}
+}
+
+if(typeof Notification!=='undefined'&&Notification.permission==='default'){
+  document.addEventListener('click',()=>{if(Notification.permission==='default')Notification.requestPermission();},{once:true});
+}
+function notify(title,body){
+  if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
+    try{new Notification('📰 '+title,{body,silent:true});}catch(e){}
+  }
+}
+
+function connectWS(){
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  ws=new WebSocket(proto+'//'+location.host);
+  ws.onopen=()=>{document.getElementById('dot').classList.add('on');wsDelay=1000;};
+  ws.onclose=()=>{
+    document.getElementById('dot').classList.remove('on');
+    setTimeout(()=>{wsDelay=Math.min(wsDelay*2,30000);connectWS();},wsDelay);
+  };
+  ws.onmessage=e=>{
+    const m=JSON.parse(e.data);
+    if(m.type==='new_articles'&&m.articles&&m.articles.length){
+      prependArts(m.articles);
+      chime();
+      notify(m.articles[0].title||'New article',m.articles[0].source_title||'');
+      document.getElementById('lastUp').textContent='Updated '+new Date().toLocaleTimeString();
+    }else if(m.type==='source_added'||m.type==='source_deleted'){
+      loadSrcs();
+      if(m.type==='source_deleted')loadArts();
+    }
+  };
+}
+
+async function loadSrcs(){
+  const r=await fetch('/api/sources');
+  const srcs=await r.json();
+  document.getElementById('srcCount').textContent=srcs.length;
+  const el=document.getElementById('srcList');
+  if(!srcs.length){el.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No sources yet</div>';return;}
+  el.innerHTML=srcs.map(s=>{
+    const isErr=s.status==='error';
+    const lp=s.last_polled_at?relTime(new Date(s.last_polled_at+' UTC')):'never';
+    return `<div class="src${isErr?' err-state':''}">
+      <div class="src-top">
+        <div>
+          <div class="src-name">${esc(s.title||s.url)}</div>
+          <div class="badges">
+            <span class="badge ${s.feed_type||'rss'}">${(s.feed_type||'rss').toUpperCase()}</span>
+            ${isErr?'<span class="badge error">ERROR</span>':''}
+          </div>
+        </div>
+        <button class="del" onclick="delSrc(${s.id})" title="Remove">×</button>
+      </div>
+      <div class="src-meta">${s.article_count||0} articles · ${lp}</div>
+      ${isErr&&s.error_message?`<div class="src-errmsg">${esc(s.error_message)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+async function loadArts(){
+  const r=await fetch('/api/articles?limit=100');
+  const d=await r.json();
+  total=d.total||0;
+  document.getElementById('artCount').textContent=total+' articles';
+  const el=document.getElementById('arts');
+  const arts=d.articles||d;
+  if(!arts||!arts.length){el.innerHTML='<div class="empty"><div class="empty-i">📡</div>Add a source to start</div>';return;}
+  el.innerHTML=arts.map(artHTML).join('');
+}
+
+async function addSrc(){
+  const input=document.getElementById('urlIn');
+  const url=input.value.trim();
+  if(!url)return;
+  const btn=document.getElementById('addBtn');
+  const errEl=document.getElementById('addErr');
+  errEl.style.display='none';
+  btn.innerHTML='<span class="spin"></span>';
+  btn.disabled=true;
+  try{
+    const r=await fetch('/api/sources',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    const d=await r.json();
+    if(!r.ok&&!d.source){
+      errEl.textContent=d.error||'Failed to add source';
+      errEl.style.display='block';
+    }else{
+      input.value='';
+      loadSrcs();
+      loadArts();
+    }
+  }catch(e){
+    errEl.textContent='Network error';
+    errEl.style.display='block';
+  }finally{
+    btn.textContent='Add';
+    btn.disabled=false;
+  }
+}
+
+async function delSrc(id){
+  if(!confirm('Remove this source?'))return;
+  await fetch('/api/sources/'+id,{method:'DELETE'});
+  loadSrcs();
+  loadArts();
+}
+
+function prependArts(arts){
+  const el=document.getElementById('arts');
+  const em=el.querySelector('.empty');
+  if(em)em.remove();
+  el.insertAdjacentHTML('afterbegin',arts.map(artHTML).join(''));
+  total+=arts.length;
+  document.getElementById('artCount').textContent=total+' articles';
+}
+
+function artHTML(a){
+  const st=a.source_title||'Unknown';
+  const c=getColor(st);
+  return `<div class="art">
+    <a class="art-link" href="${esc(a.link||'#')}" target="_blank" rel="noopener noreferrer">${esc(a.title||'Untitled')}</a>
+    <div class="art-meta">
+      <span class="art-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${esc(st)}</span>
+      <span class="art-time">${a.published_at?relTime(new Date(a.published_at+' UTC')):''}</span>
+    </div>
+    ${a.description?`<div class="art-desc">${esc(a.description)}</div>`:''}
+  </div>`;
+}
+
+function relTime(d){
+  if(isNaN(d))return'';
+  const s=Math.floor((Date.now()-d)/1000);
+  if(s<60)return s+'s ago';
+  if(s<3600)return Math.floor(s/60)+'m ago';
+  if(s<86400)return Math.floor(s/3600)+'h ago';
+  return Math.floor(s/86400)+'d ago';
+}
+
+function esc(s){
+  if(!s)return'';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('addBtn').onclick=addSrc;
+document.getElementById('urlIn').onkeydown=e=>{if(e.key==='Enter')addSrc();};
+
+connectWS();
+loadSrcs();
+loadArts();
+setInterval(loadArts,60000);
+</script>
 </body>
 </html>
