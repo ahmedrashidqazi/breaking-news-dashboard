@@ -14,26 +14,35 @@
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 header{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 h1{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
-.hdr-btns{display:flex;align-items:center;gap:6px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--red);transition:background .4s}
 .dot.on{background:var(--green)}
-.mute,.toggle-sb{background:none;border:none;cursor:pointer;font-size:20px;padding:2px 4px;line-height:1;-webkit-tap-highlight-color:transparent;color:var(--text)}
+.mute{background:none;border:none;cursor:pointer;font-size:20px;padding:2px 4px;line-height:1;-webkit-tap-highlight-color:transparent;color:var(--text)}
 
 /* 3-column layout with collapsible sidebar */
 .layout{display:grid;grid-template-columns:280px 1fr 1fr 1fr;flex:1;min-height:0;transition:grid-template-columns .2s}
-.layout.collapsed{grid-template-columns:0px 1fr 1fr 1fr}
+.layout.collapsed{grid-template-columns:24px 1fr 1fr 1fr}
 .layout.collapsed .sidebar{display:none}
+.layout.collapsed .sb-expand{display:block}
 
 @media(max-width:1000px){
-  .layout{grid-template-columns:0px 1fr 1fr 1fr}
+  .layout{grid-template-columns:24px 1fr 1fr 1fr}
   .layout .sidebar{display:none}
+  .sb-expand{display:block}
 }
 @media(max-width:700px){
   body{height:auto;overflow:auto}
   .layout,.layout.collapsed{grid-template-columns:1fr;height:auto}
   .layout .sidebar{display:none}
+  .sb-expand{display:none !important}
   .feed{overflow:visible;height:auto;min-height:300px}
 }
+
+/* Sidebar collapse/expand controls */
+.sb-collapse{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-size:11px;padding:4px 10px;width:100%;text-align:left;-webkit-tap-highlight-color:transparent}
+.sb-collapse:hover{color:var(--text);border-color:var(--accent)}
+.sb-expand{display:none;background:var(--surface);border-right:1px solid var(--border);writing-mode:vertical-rl;text-align:center;cursor:pointer;padding:8px 4px;font-size:14px;color:var(--muted);user-select:none}
+.sb-expand:hover{color:var(--text);background:var(--surface2)}
+.layout.collapsed .sb-expand{display:block}
 
 .sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px}
 .feed{overflow-y:auto;padding:14px;display:flex;flex-direction:column}
@@ -93,14 +102,13 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
 </div>
 <header>
   <h1><span class="dot" id="dot"></span>Breaking News</h1>
-  <div class="hdr-btns">
-    <button class="toggle-sb" id="toggleSidebar" title="Toggle sidebar">☰</button>
-    <button class="mute" id="muteBtn" title="Toggle sound alerts">🔔</button>
-  </div>
+  <button class="mute" id="muteBtn" title="Toggle sound alerts">🔔</button>
 </header>
 
 <div class="layout" id="layout">
+  <div class="sb-expand" id="sbExpand" title="Expand sidebar">◂</div>
   <aside class="sidebar" id="sidebar">
+    <button class="sb-collapse" id="toggleSidebar" title="Collapse sidebar">▸ Hide</button>
     <div style="display:none">
       <div class="label">Add Source</div>
       <div class="irow">
@@ -160,7 +168,10 @@ document.getElementById('muteBtn').onclick=()=>{
 
 // Sidebar toggle
 document.getElementById('toggleSidebar').onclick=()=>{
-  document.getElementById('layout').classList.toggle('collapsed');
+  document.getElementById('layout').classList.add('collapsed');
+};
+document.getElementById('sbExpand').onclick=()=>{
+  document.getElementById('layout').classList.remove('collapsed');
 };
 
 // Audio init via modal tap (required by browsers for sound to work)
