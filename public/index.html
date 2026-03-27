@@ -224,6 +224,7 @@ async function loadSrcs(){
   document.getElementById('srcCount').textContent=srcs.length;
   const el=document.getElementById('srcList');
   if(!srcs.length){el.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No sources yet</div>';return;}
+  srcs.forEach(s=>getColor(s.title||s.url));
   el.innerHTML=srcs.map(s=>{
     const isErr=s.status==='error';
     const lp=s.last_polled_at?relTime(new Date(s.last_polled_at.endsWith('Z')?s.last_polled_at:s.last_polled_at+' UTC')):'never';
@@ -272,7 +273,7 @@ async function addSrc(){
       errEl.style.display='block';
     }else{
       input.value='';
-      loadSrcs();
+      await loadSrcs();
       loadArts();
     }
   }catch(e){
@@ -331,8 +332,7 @@ document.getElementById('addBtn').onclick=addSrc;
 document.getElementById('urlIn').onkeydown=e=>{if(e.key==='Enter')addSrc();};
 
 connectWS();
-loadSrcs();
-loadArts();
+loadSrcs().then(()=>loadArts());
 setInterval(loadArts,60000);
 </script>
 </body>
