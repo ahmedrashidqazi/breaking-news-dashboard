@@ -46,6 +46,7 @@ input:focus{border-color:var(--accent)}
 .badge.rss{background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3)}
 .badge.twitter{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
 .badge.error{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.3)}
+.badge.stale{background:rgba(210,153,34,.15);color:var(--orange);border:1px solid rgba(210,153,34,.3)}
 .src-meta{font-size:11px;color:var(--muted);margin-top:4px}
 .src-errmsg{font-size:11px;color:var(--red);margin-top:3px;word-break:break-word}
 .feed-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-shrink:0}
@@ -65,6 +66,14 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
 </style>
 </head>
 <body>
+<div id="audioModal" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px 28px;text-align:center;max-width:340px;width:90%">
+    <div style="font-size:40px;margin-bottom:12px">📰</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:8px">Breaking News Dashboard</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5">Tap below to enable live sound alerts and notifications for new articles.</div>
+    <button id="audioModalBtn" style="background:#1f6feb;color:#fff;border:none;border-radius:8px;padding:12px 32px;font-size:15px;font-weight:600;cursor:pointer;width:100%;-webkit-tap-highlight-color:transparent">🔔 Enable Alerts</button>
+  </div>
+</div>
 <header>
   <h1><span class="dot" id="dot"></span>Breaking News</h1>
   <button class="mute" id="muteBtn" title="Toggle sound alerts">🔔</button>
@@ -72,7 +81,7 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
 
 <div class="layout">
   <aside class="sidebar">
-    <div>
+    <div style="display:none">
       <div class="label">Add Source</div>
       <div class="irow">
         <input id="urlIn" type="text" placeholder="RSS URL or x.com/username" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"/>
@@ -112,27 +121,78 @@ document.getElementById('muteBtn').onclick=()=>{
   document.getElementById('muteBtn').textContent=muted?'🔕':'🔔';
 };
 
+// Audio init via modal tap (required by browsers for sound to work)
+function initAudio(){
+  if(audioCtx)return;
+  try{
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    const buf=audioCtx.createBuffer(1,1,22050);
+    const src=audioCtx.createBufferSource();
+    src.buffer=buf;src.connect(audioCtx.destination);src.start(0);
+    console.log('[audio] Context initialized via user gesture');
+  }catch(e){console.warn('[audio] Init failed:',e);}
+}
+document.getElementById('audioModalBtn').onclick=function(){
+  initAudio();
+  // Play a quick confirmation chime so user knows it works
+  setTimeout(chime,100);
+  // Request notification permission
+  if(typeof Notification!=='undefined'&&Notification.permission!=='granted'){
+    Notification.requestPermission().then(p=>console.log('[notif] Permission:',p));
+  }
+  // Dismiss modal
+  document.getElementById('audioModal').style.display='none';
+};
+
 function chime(){
   if(muted)return;
   try{
-    if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
-    o.connect(g);g.connect(audioCtx.destination);
-    o.type='sine';
-    o.frequency.setValueAtTime(1047,audioCtx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(523,audioCtx.currentTime+0.2);
-    g.gain.setValueAtTime(0.25,audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.4);
-    o.start();o.stop(audioCtx.currentTime+0.4);
-  }catch(e){}
+    // If no audioCtx yet, try creating one anyway (works after first gesture even across reconnects)
+    if(!audioCtx){
+      try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}
+    }
+    if(audioCtx.state==='suspended')audioCtx.resume();
+    // Two-tone alert: high then low
+    const t=audioCtx.currentTime;
+    const o1=audioCtx.createOscillator(),g1=audioCtx.createGain();
+    o1.connect(g1);g1.connect(audioCtx.destination);
+    o1.type='sine';
+    o1.frequency.setValueAtTime(880,t);
+    g1.gain.setValueAtTime(0.5,t);
+    g1.gain.exponentialRampToValueAtTime(0.01,t+0.3);
+    o1.start(t);o1.stop(t+0.3);
+    const o2=audioCtx.createOscillator(),g2=audioCtx.createGain();
+    o2.connect(g2);g2.connect(audioCtx.destination);
+    o2.type='sine';
+    o2.frequency.setValueAtTime(1175,t+0.15);
+    g2.gain.setValueAtTime(0.5,t+0.15);
+    g2.gain.exponentialRampToValueAtTime(0.01,t+0.5);
+    o2.start(t+0.15);o2.stop(t+0.5);
+  }catch(e){console.warn('[chime]',e);}
 }
 
-if(typeof Notification!=='undefined'&&Notification.permission==='default'){
-  document.addEventListener('click',()=>{if(Notification.permission==='default')Notification.requestPermission();},{once:true});
+if(typeof Notification!=='undefined'&&Notification.permission!=='granted'){
+  // Request on every click until granted
+  document.addEventListener('click',function askNotif(){
+    if(Notification.permission!=='granted'){
+      Notification.requestPermission().then(p=>{
+        console.log('[notif] Permission:',p);
+        if(p==='granted')document.removeEventListener('click',askNotif);
+      });
+    }
+  });
 }
+// Show current permission state in console
+console.log('[notif] Current permission:',typeof Notification!=='undefined'?Notification.permission:'not supported');
 function notify(title,body){
-  if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
-    try{new Notification('📰 '+title,{body,silent:true});}catch(e){}
+  const perm = typeof Notification!=='undefined' ? Notification.permission : 'unsupported';
+  console.log('[notify] called, permission='+perm, 'title='+title);
+  document.getElementById('lastUp').textContent='Notif perm: '+perm;
+  if(perm==='granted'){
+    try{
+      const n=new Notification('📰 '+title,{body});
+      console.log('[notify] Notification created:', n);
+    }catch(e){console.error('[notify] Error:',e);}
   }
 }
 
@@ -166,17 +226,17 @@ async function loadSrcs(){
   if(!srcs.length){el.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No sources yet</div>';return;}
   el.innerHTML=srcs.map(s=>{
     const isErr=s.status==='error';
-    const lp=s.last_polled_at?relTime(new Date(s.last_polled_at+' UTC')):'never';
+    const lp=s.last_polled_at?relTime(new Date(s.last_polled_at.endsWith('Z')?s.last_polled_at:s.last_polled_at+' UTC')):'never';
     return `<div class="src${isErr?' err-state':''}">
       <div class="src-top">
         <div>
           <div class="src-name">${esc(s.title||s.url)}</div>
           <div class="badges">
             <span class="badge ${s.feed_type||'rss'}">${(s.feed_type||'rss').toUpperCase()}</span>
-            ${isErr?'<span class="badge error">ERROR</span>':''}
+            ${isErr?'<span class="badge error">ERROR</span>':''}${s.status==='stale'?'<span class="badge stale">STALE</span>':''}
           </div>
         </div>
-        <button class="del" onclick="delSrc(${s.id})" title="Remove">×</button>
+        <!-- delete button hidden for now -->
       </div>
       <div class="src-meta">${s.article_count||0} articles · ${lp}</div>
       ${isErr&&s.error_message?`<div class="src-errmsg">${esc(s.error_message)}</div>`:''}
@@ -247,7 +307,7 @@ function artHTML(a){
     <a class="art-link" href="${esc(a.link||'#')}" target="_blank" rel="noopener noreferrer">${esc(a.title||'Untitled')}</a>
     <div class="art-meta">
       <span class="art-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${esc(st)}</span>
-      <span class="art-time">${a.published_at?relTime(new Date(a.published_at+' UTC')):''}</span>
+      <span class="art-time">${a.published_at?relTime(new Date(a.published_at)):''}</span>
     </div>
     ${a.description?`<div class="art-desc">${esc(a.description)}</div>`:''}
   </div>`;

@@ -23,7 +23,8 @@ async function fetchSources() {
 
 async function fetchArticles() {
   const res = await fetch("/api/articles?limit=100");
-  articles = await res.json();
+  const data = await res.json();
+  articles = Array.isArray(data) ? data : (data.articles || []);
   renderArticles();
 }
 
