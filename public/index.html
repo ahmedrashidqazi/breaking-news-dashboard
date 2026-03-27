@@ -14,15 +14,27 @@
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 header{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 h1{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.hdr-btns{display:flex;align-items:center;gap:6px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--red);transition:background .4s}
 .dot.on{background:var(--green)}
-.mute{background:none;border:none;cursor:pointer;font-size:20px;padding:2px 4px;line-height:1;-webkit-tap-highlight-color:transparent}
-.layout{display:grid;grid-template-columns:300px 1fr;flex:1;min-height:0}
+.mute,.toggle-sb{background:none;border:none;cursor:pointer;font-size:20px;padding:2px 4px;line-height:1;-webkit-tap-highlight-color:transparent;color:var(--text)}
+
+/* 3-column layout with collapsible sidebar */
+.layout{display:grid;grid-template-columns:280px 1fr 1fr 1fr;flex:1;min-height:0;transition:grid-template-columns .2s}
+.layout.collapsed{grid-template-columns:0px 1fr 1fr 1fr}
+.layout.collapsed .sidebar{display:none}
+
+@media(max-width:1000px){
+  .layout{grid-template-columns:0px 1fr 1fr 1fr}
+  .layout .sidebar{display:none}
+}
 @media(max-width:700px){
   body{height:auto;overflow:auto}
-  .layout{grid-template-columns:1fr;height:auto}
-  .sidebar,.feed{overflow:visible;height:auto}
+  .layout,.layout.collapsed{grid-template-columns:1fr;height:auto}
+  .layout .sidebar{display:none}
+  .feed{overflow:visible;height:auto;min-height:300px}
 }
+
 .sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px}
 .feed{overflow-y:auto;padding:14px;display:flex;flex-direction:column}
 .label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
@@ -49,8 +61,13 @@ input:focus{border-color:var(--accent)}
 .badge.stale{background:rgba(210,153,34,.15);color:var(--orange);border:1px solid rgba(210,153,34,.3)}
 .src-meta{font-size:11px;color:var(--muted);margin-top:4px}
 .src-errmsg{font-size:11px;color:var(--red);margin-top:3px;word-break:break-word}
-.feed-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-shrink:0}
-#arts{display:flex;flex-direction:column;gap:7px}
+
+/* Column headers */
+.col-header{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;margin-bottom:10px;border-left:3px solid var(--accent);background:var(--surface);border-radius:4px;flex-shrink:0}
+.col-header.scrape{border-left:3px dashed var(--orange);color:var(--orange)}
+
+/* Article lists */
+.art-list{display:flex;flex-direction:column;gap:7px}
 .art{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;animation:fi .25s ease-out;transition:border-color .15s}
 .art:hover{border-color:rgba(88,166,255,.5)}
 @keyframes fi{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
@@ -58,7 +75,7 @@ input:focus{border-color:var(--accent)}
 .art-link:hover{color:var(--accent)}
 .art-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .art-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
-.art-time{font-size:11px;color:var(--muted)}
+.art-time{font-size:11px;color:var(--muted);line-height:1.4}
 .art-desc{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .empty{text-align:center;color:var(--muted);padding:48px 16px}
 .empty-i{font-size:36px;margin-bottom:8px}
@@ -76,11 +93,14 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
 </div>
 <header>
   <h1><span class="dot" id="dot"></span>Breaking News</h1>
-  <button class="mute" id="muteBtn" title="Toggle sound alerts">🔔</button>
+  <div class="hdr-btns">
+    <button class="toggle-sb" id="toggleSidebar" title="Toggle sidebar">☰</button>
+    <button class="mute" id="muteBtn" title="Toggle sound alerts">🔔</button>
+  </div>
 </header>
 
-<div class="layout">
-  <aside class="sidebar">
+<div class="layout" id="layout">
+  <aside class="sidebar" id="sidebar">
     <div style="display:none">
       <div class="label">Add Source</div>
       <div class="irow">
@@ -95,12 +115,24 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
     </div>
   </aside>
 
-  <section class="feed">
-    <div class="feed-top">
-      <div class="label" style="margin:0">Live Feed</div>
+  <section class="feed" id="col-twitter">
+    <div class="col-header">🐦 @Wario64 — Twitter via Nitter</div>
+    <div class="art-list" id="arts-twitter">
+      <div class="empty"><div class="empty-i">🐦</div>Waiting for tweets...</div>
     </div>
-    <div id="arts">
-      <div class="empty"><div class="empty-i">📡</div>Add a source to start</div>
+  </section>
+
+  <section class="feed" id="col-rss">
+    <div class="col-header">📰 GamesRadar — RSS Feed</div>
+    <div class="art-list" id="arts-rss">
+      <div class="empty"><div class="empty-i">📰</div>Waiting for RSS...</div>
+    </div>
+  </section>
+
+  <section class="feed" id="col-scrape">
+    <div class="col-header scrape">⚡ GamesRadar — HTML Polling (A/B Test)</div>
+    <div class="art-list" id="arts-scrape">
+      <div class="empty"><div class="empty-i">⚡</div>Waiting for scrape...</div>
     </div>
   </section>
 </div>
@@ -111,14 +143,24 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
 </footer>
 
 <script>
-let muted=false,wsDelay=1000,ws,audioCtx,total=0;
+let muted=false,wsDelay=1000,ws,audioCtx,totalTwitter=0,totalRss=0,totalScrape=0;
 const palette=['#58a6ff','#3fb950','#d29922','#bc8cff','#fa7970','#79c0ff','#ffa657'];
 const cmap={};let ci=0;
 function getColor(n){if(!cmap[n])cmap[n]=palette[ci++%palette.length];return cmap[n];}
 
+// Pre-register known source colors for consistency
+getColor('GamesRadar');
+getColor('@Wario64');
+getColor('GamesRadar HTML');
+
 document.getElementById('muteBtn').onclick=()=>{
   muted=!muted;
   document.getElementById('muteBtn').textContent=muted?'🔕':'🔔';
+};
+
+// Sidebar toggle
+document.getElementById('toggleSidebar').onclick=()=>{
+  document.getElementById('layout').classList.toggle('collapsed');
 };
 
 // Audio init via modal tap (required by browsers for sound to work)
@@ -134,25 +176,20 @@ function initAudio(){
 }
 document.getElementById('audioModalBtn').onclick=function(){
   initAudio();
-  // Play a quick confirmation chime so user knows it works
   setTimeout(chime,100);
-  // Request notification permission
   if(typeof Notification!=='undefined'&&Notification.permission!=='granted'){
     Notification.requestPermission().then(p=>console.log('[notif] Permission:',p));
   }
-  // Dismiss modal
   document.getElementById('audioModal').style.display='none';
 };
 
 function chime(){
   if(muted)return;
   try{
-    // If no audioCtx yet, try creating one anyway (works after first gesture even across reconnects)
     if(!audioCtx){
       try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}
     }
     if(audioCtx.state==='suspended')audioCtx.resume();
-    // Two-tone alert: high then low
     const t=audioCtx.currentTime;
     const o1=audioCtx.createOscillator(),g1=audioCtx.createGain();
     o1.connect(g1);g1.connect(audioCtx.destination);
@@ -172,7 +209,6 @@ function chime(){
 }
 
 if(typeof Notification!=='undefined'&&Notification.permission!=='granted'){
-  // Request on every click until granted
   document.addEventListener('click',function askNotif(){
     if(Notification.permission!=='granted'){
       Notification.requestPermission().then(p=>{
@@ -182,7 +218,6 @@ if(typeof Notification!=='undefined'&&Notification.permission!=='granted'){
     }
   });
 }
-// Show current permission state in console
 console.log('[notif] Current permission:',typeof Notification!=='undefined'?Notification.permission:'not supported');
 function notify(title,body){
   const perm = typeof Notification!=='undefined' ? Notification.permission : 'unsupported';
@@ -207,15 +242,31 @@ function connectWS(){
   ws.onmessage=e=>{
     const m=JSON.parse(e.data);
     if(m.type==='new_articles'&&m.articles&&m.articles.length){
-      prependArts(m.articles);
+      // Route scrape articles to the scrape column
+      if(m.method==='scrape'){
+        prependToCol('arts-scrape',m.articles);
+        totalScrape+=m.articles.length;
+      }else{
+        // Route by feed_type in each article
+        const twitterArts=m.articles.filter(a=>a.feed_type==='twitter');
+        const rssArts=m.articles.filter(a=>a.feed_type==='rss');
+        if(twitterArts.length){prependToCol('arts-twitter',twitterArts);totalTwitter+=twitterArts.length;}
+        if(rssArts.length){prependToCol('arts-rss',rssArts);totalRss+=rssArts.length;}
+      }
+      updateTotalCount();
       chime();
       notify(m.articles[0].title||'New article',m.articles[0].source_title||'');
       document.getElementById('lastUp').textContent='Updated '+new Date().toLocaleTimeString();
     }else if(m.type==='source_added'||m.type==='source_deleted'){
       loadSrcs();
-      if(m.type==='source_deleted')loadArts();
+      if(m.type==='source_deleted'){loadArtsTwitter();loadArtsRSS();}
     }
   };
+}
+
+function updateTotalCount(){
+  const t=totalTwitter+totalRss+totalScrape;
+  document.getElementById('artCount').textContent=t+' articles';
 }
 
 async function loadSrcs(){
@@ -237,7 +288,6 @@ async function loadSrcs(){
             ${isErr?'<span class="badge error">ERROR</span>':''}${s.status==='stale'?'<span class="badge stale">STALE</span>':''}
           </div>
         </div>
-        <!-- delete button hidden for now -->
       </div>
       <div class="src-meta">${s.article_count||0} articles · ${lp}</div>
       ${isErr&&s.error_message?`<div class="src-errmsg">${esc(s.error_message)}</div>`:''}
@@ -245,15 +295,43 @@ async function loadSrcs(){
   }).join('');
 }
 
-async function loadArts(){
-  const r=await fetch('/api/articles?limit=100');
-  const d=await r.json();
-  total=d.total||0;
-  document.getElementById('artCount').textContent=total+' articles';
-  const el=document.getElementById('arts');
-  const arts=d.articles||d;
-  if(!arts||!arts.length){el.innerHTML='<div class="empty"><div class="empty-i">📡</div>Add a source to start</div>';return;}
-  el.innerHTML=arts.map(artHTML).join('');
+async function loadArtsTwitter(){
+  try{
+    const r=await fetch('/api/articles?feed_type=twitter&limit=50');
+    const d=await r.json();
+    totalTwitter=d.total||0;
+    const el=document.getElementById('arts-twitter');
+    const arts=d.articles||[];
+    if(!arts.length){el.innerHTML='<div class="empty"><div class="empty-i">🐦</div>Waiting for tweets...</div>';return;}
+    el.innerHTML=arts.map(artCardHTML).join('');
+    updateTotalCount();
+  }catch(e){console.error('[loadArtsTwitter]',e);}
+}
+
+async function loadArtsRSS(){
+  try{
+    const r=await fetch('/api/articles?feed_type=rss&limit=50');
+    const d=await r.json();
+    totalRss=d.total||0;
+    const el=document.getElementById('arts-rss');
+    const arts=d.articles||[];
+    if(!arts.length){el.innerHTML='<div class="empty"><div class="empty-i">📰</div>Waiting for RSS...</div>';return;}
+    el.innerHTML=arts.map(artCardHTML).join('');
+    updateTotalCount();
+  }catch(e){console.error('[loadArtsRSS]',e);}
+}
+
+async function loadArtsScrape(){
+  try{
+    const r=await fetch('/api/scrape-articles?limit=50');
+    const d=await r.json();
+    totalScrape=d.total||0;
+    const el=document.getElementById('arts-scrape');
+    const arts=d.articles||[];
+    if(!arts.length){el.innerHTML='<div class="empty"><div class="empty-i">⚡</div>Waiting for scrape...</div>';return;}
+    el.innerHTML=arts.map(a=>artCardHTML({...a,source_title:'GamesRadar HTML',feed_type:'scrape'})).join('');
+    updateTotalCount();
+  }catch(e){console.error('[loadArtsScrape]',e);}
 }
 
 async function addSrc(){
@@ -274,7 +352,7 @@ async function addSrc(){
     }else{
       input.value='';
       await loadSrcs();
-      loadArts();
+      loadArtsTwitter();loadArtsRSS();
     }
   }catch(e){
     errEl.textContent='Network error';
@@ -289,34 +367,56 @@ async function delSrc(id){
   if(!confirm('Remove this source?'))return;
   await fetch('/api/sources/'+id,{method:'DELETE'});
   loadSrcs();
-  loadArts();
+  loadArtsTwitter();loadArtsRSS();
 }
 
-function prependArts(arts){
-  const el=document.getElementById('arts');
+function prependToCol(colId,arts){
+  const el=document.getElementById(colId);
   const em=el.querySelector('.empty');
   if(em)em.remove();
-  el.insertAdjacentHTML('afterbegin',arts.map(artHTML).join(''));
-  total+=arts.length;
-  document.getElementById('artCount').textContent=total+' articles';
+  // For scrape articles, add source_title so the card renders correctly
+  const mapped=arts.map(a=>{
+    if(!a.source_title&&!a.feed_type) return {...a,source_title:'GamesRadar HTML',feed_type:'scrape'};
+    return a;
+  });
+  el.insertAdjacentHTML('afterbegin',mapped.map(artCardHTML).join(''));
 }
 
-function artHTML(a){
+// Shared article card used by all 3 columns — shows dual timestamps
+function artCardHTML(a){
   const st=a.source_title||'Unknown';
   const c=getColor(st);
+  const pubDate=parseDate(a.published_at);
+  const fetchDate=parseDate(a.created_at);
   return `<div class="art">
     <a class="art-link" href="${esc(a.link||'#')}" target="_blank" rel="noopener noreferrer">${esc(a.title||'Untitled')}</a>
     <div class="art-meta">
       <span class="art-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${esc(st)}</span>
-      <span class="art-time">${a.published_at?relTime(new Date(a.published_at)):''}</span>
+    </div>
+    <div class="art-time" style="margin-top:4px">
+      ${pubDate?`<div>Published: ${relTime(pubDate)} <span style="opacity:.6">(${fmtTime(pubDate)})</span></div>`:''}
+      ${fetchDate?`<div>Fetched: ${relTime(fetchDate)} <span style="opacity:.6">(${fmtTime(fetchDate)})</span></div>`:''}
     </div>
     ${a.description?`<div class="art-desc">${esc(a.description)}</div>`:''}
   </div>`;
 }
 
+// Parse SQLite datetime strings — they lack timezone so treat as UTC
+function parseDate(s){
+  if(!s)return null;
+  const d=new Date(s.endsWith('Z')?s:s+'Z');
+  return isNaN(d)?null:d;
+}
+
+function fmtTime(d){
+  if(!d)return'';
+  return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+}
+
 function relTime(d){
-  if(isNaN(d))return'';
+  if(!d||isNaN(d))return'';
   const s=Math.floor((Date.now()-d)/1000);
+  if(s<0)return'just now';
   if(s<60)return s+'s ago';
   if(s<3600)return Math.floor(s/60)+'m ago';
   if(s<86400)return Math.floor(s/3600)+'h ago';
@@ -332,8 +432,9 @@ document.getElementById('addBtn').onclick=addSrc;
 document.getElementById('urlIn').onkeydown=e=>{if(e.key==='Enter')addSrc();};
 
 connectWS();
-loadSrcs().then(()=>loadArts());
-setInterval(loadArts,60000);
+loadSrcs().then(()=>{loadArtsTwitter();loadArtsRSS();loadArtsScrape();});
+// Refresh all columns periodically
+setInterval(()=>{loadArtsTwitter();loadArtsRSS();loadArtsScrape();},60000);
 </script>
 </body>
 </html>

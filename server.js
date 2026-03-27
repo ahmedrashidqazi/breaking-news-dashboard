@@ -17,6 +17,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3001;
 const POLL_INTERVAL = 15_000;
+const SCRAPE_INTERVAL = 60_000;
+const SCRAPE_URL = 'https://www.gamesradar.com/games/news/';
+const SCRAPE_UA = 'Mozilla/5.0 (compatible; NewsAggregator/1.0)';
 
 // Database setup
 const db = new Database(path.join(__dirname, 'news.db'));
@@ -48,6 +51,15 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_articles_guid ON articles(guid) WHERE guid IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_articles_pub ON articles(published_at DESC);
   CREATE INDEX IF NOT EXISTS idx_articles_src ON articles(source_id);
+
+  CREATE TABLE IF NOT EXISTS scrape_articles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    link TEXT UNIQUE,
+    published_at DATETIME,
+    created_at DATETIME DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_scrape_pub ON scrape_articles(published_at DESC);
 `);
 
 const parser = new RSSParser({
@@ -318,6 +330,88 @@ async function fetchAndStore(source, isInitial = false) {
   return { newArticles, method: result.method, title: feedTitle };
 }
 
+// GamesRadar HTML scraper — independent A/B test against RSS
+let scrapeZeroCount = 0; // consecutive polls returning 0 articles
+
+async function scrapeGamesRadar() {
+  try {
+    const res = await fetch(SCRAPE_URL, {
+      headers: { 'User-Agent': SCRAPE_UA },
+      timeout: 15000
+    });
+    if (!res.ok) {
+      console.log(`[Scrape] HTTP ${res.status} from ${SCRAPE_URL}`);
+      return [];
+    }
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    const insertStmt = db.prepare(`
+      INSERT OR IGNORE INTO scrape_articles (title, link, published_at)
+      VALUES (?, ?, ?)
+    `);
+
+    const newArticles = [];
+    let foundOnPage = 0;
+    $('a.wdn-listv2-item-link').each((i, el) => {
+      // Skip sponsored posts
+      if ($(el).closest('.sponsored-post').length) return;
+
+      const href = $(el).attr('href');
+      if (!href) return;
+      const link = href.startsWith('http') ? href : new URL(href, SCRAPE_URL).href;
+      const title = $(el).find('.wdn-listv2-item-content-title').text().trim();
+      if (!title) return;
+
+      foundOnPage++;
+
+      // Try primary time selector, fall back to relative-date
+      const timeEl = $(el).find('time.byline__time[datetime]');
+      const fallbackEl = $(el).find('time.relative-date[datetime]');
+      const published = timeEl.attr('datetime') || fallbackEl.attr('datetime') || null;
+
+      try {
+        const info = insertStmt.run(title, link, published);
+        if (info.changes > 0) {
+          const art = db.prepare('SELECT * FROM scrape_articles WHERE id=?').get(info.lastInsertRowid);
+          if (art) newArticles.push(art);
+        }
+      } catch (e) {}
+    });
+
+    // Health check: warn if page yields 0 articles (selectors may have broken)
+    if (foundOnPage === 0) {
+      scrapeZeroCount++;
+      if (scrapeZeroCount >= 5) {
+        console.log(`[Scrape] WARNING: 0 articles for 5 consecutive polls — page structure may have changed`);
+      }
+    } else {
+      scrapeZeroCount = 0;
+      console.log(`[Scrape] Found ${foundOnPage} articles on page, ${newArticles.length} new`);
+    }
+
+    return newArticles;
+  } catch (e) {
+    console.error(`[Scrape] Error:`, e.message);
+    return [];
+  }
+}
+
+// Separate scrape loop on 60s interval
+async function scrapeLoop() {
+  try {
+    const newArticles = await scrapeGamesRadar();
+    if (newArticles.length > 0) {
+      broadcast({ type: 'new_articles', articles: newArticles, method: 'scrape' });
+      console.log(`[Scrape] +${newArticles.length} new from HTML scrape`);
+    }
+  } catch (e) {
+    console.error(`[Scrape] Loop error:`, e.message);
+  }
+  setTimeout(scrapeLoop, SCRAPE_INTERVAL);
+}
+scrapeLoop();
+
 // REST API
 app.get('/api/sources', (req, res) => {
   const rows = db.prepare(`
@@ -359,14 +453,39 @@ app.delete('/api/sources/:id', (req, res) => {
 app.get('/api/articles', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const offset = parseInt(req.query.offset) || 0;
+  const feedType = req.query.feed_type;
+
+  let whereClause = '';
+  const params = [];
+  if (feedType) {
+    whereClause = 'WHERE s.feed_type = ?';
+    params.push(feedType);
+  }
+
   const articles = db.prepare(`
     SELECT a.*, s.title as source_title, s.feed_type
     FROM articles a
     JOIN sources s ON s.id=a.source_id
+    ${whereClause}
     ORDER BY a.published_at DESC, a.created_at DESC
     LIMIT ? OFFSET ?
+  `).all(...params, limit, offset);
+
+  const countQuery = feedType
+    ? db.prepare('SELECT COUNT(*) as count FROM articles a JOIN sources s ON s.id=a.source_id WHERE s.feed_type = ?').get(feedType)
+    : db.prepare('SELECT COUNT(*) as count FROM articles').get();
+  res.json({ articles, total: countQuery.count });
+});
+
+app.get('/api/scrape-articles', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const offset = parseInt(req.query.offset) || 0;
+  const articles = db.prepare(`
+    SELECT * FROM scrape_articles
+    ORDER BY published_at DESC, created_at DESC
+    LIMIT ? OFFSET ?
   `).all(limit, offset);
-  const { count } = db.prepare('SELECT COUNT(*) as count FROM articles').get();
+  const { count } = db.prepare('SELECT COUNT(*) as count FROM scrape_articles').get();
   res.json({ articles, total: count });
 });
 
