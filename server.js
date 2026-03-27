@@ -16,7 +16,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3001;
-const POLL_INTERVAL = 45000;
+const POLL_INTERVAL = 15_000;
 
 // Database setup
 const db = new Database(path.join(__dirname, 'news.db'));
@@ -328,7 +328,7 @@ app.get('/', (req, res) => {
 // Polling loop
 async function pollAll() {
   const sources = db.prepare('SELECT * FROM sources').all();
-  for (const source of sources) {
+  await Promise.allSettled(sources.map(async (source) => {
     try {
       const { newArticles } = await fetchAndStore(source, false);
       if (newArticles.length > 0) {
@@ -338,10 +338,15 @@ async function pollAll() {
     } catch(e) {
       console.error(`[Poll] Error on ${source.url}:`, e.message);
     }
-  }
+  }));
 }
 
-setInterval(pollAll, POLL_INTERVAL);
+// Self-scheduling poll loop prevents overlapping runs
+async function pollLoop() {
+  await pollAll();
+  setTimeout(pollLoop, POLL_INTERVAL);
+}
+pollLoop();
 
 // WebSocket
 wss.on('connection', ws => {
