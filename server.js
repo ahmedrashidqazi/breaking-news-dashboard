@@ -467,7 +467,7 @@ app.get('/api/articles', (req, res) => {
     FROM articles a
     JOIN sources s ON s.id=a.source_id
     ${whereClause}
-    ORDER BY a.published_at DESC, a.created_at DESC
+    ORDER BY a.created_at DESC
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset);
 
