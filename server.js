@@ -213,6 +213,7 @@ async function fetchTwitterFeed(twitterUrl) {
   }
 
   const nitters = [
+    'https://xcancel.com',
     'https://nitter.privacydev.net',
     'https://nitter.poast.org',
     'https://nitter.net',
@@ -254,7 +255,7 @@ async function fetchTwitterFeed(twitterUrl) {
     const result = await Promise.any(candidates);
     ac.abort();
     twitterMethodCache.set(username, { method: result.method, url: result.url });
-    console.log(`[Twitter] ${result.method} won race for @${username} (${result.feed.items.length} items)`);
+    console.log(`[Twitter] ${result.method} won race for @${username} (${result.feed.items.length} items) via ${result.url}`);
     return { success: true, feed: result.feed, method: result.method, title: result.title };
   } catch (e) {
     // AggregateError means every single method failed
