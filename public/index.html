@@ -307,27 +307,44 @@ function updateTotalCount(){
 async function loadSrcs(){
   const r=await fetch('/api/sources');
   const srcs=await r.json();
-  document.getElementById('srcCount').textContent=srcs.length;
   const el=document.getElementById('srcList');
   if(!srcs.length){el.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No sources yet</div>';return;}
   srcs.forEach(s=>getColor(s.title||s.url));
-  el.innerHTML=srcs.map(s=>{
-    const isErr=s.status==='error';
-    const lp=s.last_polled_at?relTime(new Date(s.last_polled_at.endsWith('Z')?s.last_polled_at:s.last_polled_at+' UTC')):'never';
-    return `<div class="src${isErr?' err-state':''}">
-      <div class="src-top">
-        <div>
-          <div class="src-name">${esc(s.title||s.url)}</div>
-          <div class="badges">
-            <span class="badge ${s.feed_type||'rss'}">${(s.feed_type||'rss').toUpperCase()}</span>
-            ${isErr?'<span class="badge error">ERROR</span>':''}${s.status==='stale'?'<span class="badge stale">STALE</span>':''}
-          </div>
-        </div>
-      </div>
-      <div class="src-meta">${s.article_count||0} articles · ${lp}</div>
-      ${isErr&&s.error_message?`<div class="src-errmsg">${esc(s.error_message)}</div>`:''}
-    </div>`;
-  }).join('');
+
+  // Consolidate: group Wario64 (twitter+bluesky) and GamesRadar (rss) into 2 entries
+  const warioSrcs=srcs.filter(s=>s.feed_type==='twitter'||s.feed_type==='bluesky');
+  const grSrcs=srcs.filter(s=>s.feed_type==='rss');
+  const groups=[];
+
+  if(warioSrcs.length){
+    const totalArts=warioSrcs.reduce((s,x)=>s+(x.article_count||0),0);
+    const methods=warioSrcs.map(s=>s.feed_type.toUpperCase());
+    const latest=warioSrcs.map(s=>s.last_polled_at).filter(Boolean).sort().pop();
+    const lp=latest?relTime(new Date(latest.endsWith('Z')?latest:latest+' UTC')):'never';
+    groups.push(`<div class="src">
+      <div class="src-top"><div>
+        <div class="src-name">@Wario64</div>
+        <div class="badges">${methods.map(m=>`<span class="badge ${m.toLowerCase()}">${m}</span>`).join('')}</div>
+      </div></div>
+      <div class="src-meta">${totalArts} articles · ${lp}</div>
+    </div>`);
+  }
+
+  if(grSrcs.length){
+    const totalArts=grSrcs.reduce((s,x)=>s+(x.article_count||0),0);
+    const latest=grSrcs.map(s=>s.last_polled_at).filter(Boolean).sort().pop();
+    const lp=latest?relTime(new Date(latest.endsWith('Z')?latest:latest+' UTC')):'never';
+    groups.push(`<div class="src">
+      <div class="src-top"><div>
+        <div class="src-name">GamesRadar+</div>
+        <div class="badges"><span class="badge rss">RSS</span><span class="badge" style="background:rgba(210,153,34,.15);color:var(--orange);border:1px solid rgba(210,153,34,.3)">HTML</span></div>
+      </div></div>
+      <div class="src-meta">${totalArts} articles · ${lp}</div>
+    </div>`);
+  }
+
+  document.getElementById('srcCount').textContent=groups.length;
+  el.innerHTML=groups.join('');
 }
 
 async function loadArtsTwitter(){
@@ -414,8 +431,8 @@ function artCardHTML(a){
     <a class="art-link" href="${esc(a.link||'#')}" target="_blank" rel="noopener noreferrer">${esc(a.title||'Untitled')}</a>
     <div class="art-meta">
       <span class="art-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${esc(st)}</span>
-      ${a.fetch_method?`<span style="font-size:9px;color:var(--muted);opacity:.6">via ${a.fetch_method}</span>`:''}
-      ${a.also_found_by?`<span style="font-size:9px;color:var(--green);opacity:.8">✓ also ${a.also_found_by}</span>`:''}
+      ${a.fetch_method?`<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(88,166,255,.1);color:var(--muted)">via ${a.fetch_method}</span>`:''}
+      ${a.also_found_by?`<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(63,185,80,.1);color:var(--green)">✓ ${a.also_found_by}</span>`:''}
     </div>
     <div class="art-time" style="margin-top:4px">
       ${pubDate?`<div>Published: ${relTime(pubDate)} <span style="opacity:.6">(${fmtTime(pubDate)})</span></div>`:''}
