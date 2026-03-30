@@ -467,7 +467,7 @@ function artCardHTML(a){
     <div class="art-meta">
       <span class="art-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${esc(st)}</span>
       ${a.fetch_method?`<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(88,166,255,.1);color:var(--muted)">via ${a.fetch_method}</span>`:''}
-      ${a.also_found_by?`<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(63,185,80,.1);color:var(--green)">✓ ${a.also_found_by}</span>`:''}
+      ${a.also_found_by?`<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(63,185,80,.1);color:var(--green)">✓ also ${a.also_found_by}</span>`:''}
     </div>
     <div class="art-time" style="margin-top:4px">
       ${pubDate?`<div>Published: ${relTime(pubDate)} <span style="opacity:.6">(${fmtTime(pubDate)})</span></div>`:''}
