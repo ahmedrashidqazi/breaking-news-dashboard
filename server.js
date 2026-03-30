@@ -45,21 +45,15 @@ db.exec(`
     description TEXT,
     published_at DATETIME,
     guid TEXT,
+    fetch_method TEXT DEFAULT 'rss',
+    also_found_by TEXT,
     created_at DATETIME DEFAULT (datetime('now')),
     FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE
   );
   CREATE UNIQUE INDEX IF NOT EXISTS idx_articles_guid ON articles(guid) WHERE guid IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_articles_link ON articles(link) WHERE link IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_articles_pub ON articles(published_at DESC);
   CREATE INDEX IF NOT EXISTS idx_articles_src ON articles(source_id);
-
-  CREATE TABLE IF NOT EXISTS scrape_articles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT,
-    link TEXT UNIQUE,
-    published_at DATETIME,
-    created_at DATETIME DEFAULT (datetime('now'))
-  );
-  CREATE INDEX IF NOT EXISTS idx_scrape_pub ON scrape_articles(published_at DESC);
 `);
 
 const parser = new RSSParser({
@@ -303,9 +297,10 @@ async function fetchAndStore(source, isInitial = false) {
     source.title = feedTitle;
   }
 
+  const fetchMethod = source.feed_type === 'twitter' ? 'twitter' : 'rss';
   const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO articles (source_id, title, link, description, published_at, guid)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO articles (source_id, title, link, description, published_at, guid, fetch_method)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   const newArticles = [];
@@ -317,10 +312,14 @@ async function fetchAndStore(source, isInitial = false) {
     const pubDate = item.pubDate || item.isoDate || item.published || new Date().toISOString();
 
     try {
-      const info = insertStmt.run(source.id, title, link, desc, pubDate, guid);
+      const info = insertStmt.run(source.id, title, link, desc, pubDate, guid, fetchMethod);
       if (info.changes > 0 && !isInitial) {
         const art = db.prepare('SELECT * FROM articles WHERE rowid=?').get(info.lastInsertRowid);
         if (art) newArticles.push({ ...art, source_title: feedTitle, feed_type: source.feed_type });
+      } else if (info.changes === 0 && link) {
+        // Article already exists — mark that this method also found it
+        db.prepare("UPDATE articles SET also_found_by = ? WHERE link = ? AND also_found_by IS NULL AND fetch_method != ?")
+          .run(fetchMethod, link, fetchMethod);
       }
     } catch(e) {}
   }
@@ -331,10 +330,17 @@ async function fetchAndStore(source, isInitial = false) {
   return { newArticles, method: result.method, title: feedTitle };
 }
 
-// GamesRadar HTML scraper — independent A/B test against RSS
-let scrapeZeroCount = 0; // consecutive polls returning 0 articles
+// GamesRadar HTML scraper — supplements RSS by catching articles either method might miss
+let scrapeZeroCount = 0;
 
 async function scrapeGamesRadar() {
+  // Find the GamesRadar RSS source to use its source_id
+  const grSource = db.prepare("SELECT id, title FROM sources WHERE feed_type = 'rss' AND url LIKE '%gamesradar%' LIMIT 1").get();
+  if (!grSource) {
+    console.log('[Scrape] No GamesRadar RSS source found, skipping');
+    return [];
+  }
+
   try {
     const res = await fetch(SCRAPE_URL, {
       headers: { 'User-Agent': SCRAPE_UA },
@@ -348,14 +354,13 @@ async function scrapeGamesRadar() {
     const $ = cheerio.load(html);
 
     const insertStmt = db.prepare(`
-      INSERT OR IGNORE INTO scrape_articles (title, link, published_at)
-      VALUES (?, ?, ?)
+      INSERT OR IGNORE INTO articles (source_id, title, link, published_at, guid, fetch_method)
+      VALUES (?, ?, ?, ?, ?, 'scrape')
     `);
 
     const newArticles = [];
     let foundOnPage = 0;
     $('a.wdn-listv2-item-link').each((i, el) => {
-      // Skip sponsored posts
       if ($(el).closest('.sponsored-post').length) return;
 
       const href = $(el).attr('href');
@@ -366,21 +371,24 @@ async function scrapeGamesRadar() {
 
       foundOnPage++;
 
-      // Try primary time selector, fall back to relative-date
       const timeEl = $(el).find('time.byline__time[datetime]');
       const fallbackEl = $(el).find('time.relative-date[datetime]');
       const published = timeEl.attr('datetime') || fallbackEl.attr('datetime') || null;
+      const guid = 'scrape-' + link;
 
       try {
-        const info = insertStmt.run(title, link, published);
+        const info = insertStmt.run(grSource.id, title, link, published, guid);
         if (info.changes > 0) {
-          const art = db.prepare('SELECT * FROM scrape_articles WHERE id=?').get(info.lastInsertRowid);
-          if (art) newArticles.push(art);
+          const art = db.prepare('SELECT * FROM articles WHERE rowid=?').get(info.lastInsertRowid);
+          if (art) newArticles.push({ ...art, source_title: grSource.title, feed_type: 'rss' });
+        } else if (info.changes === 0) {
+          // Article already exists via RSS — mark that scrape also found it
+          db.prepare("UPDATE articles SET also_found_by = 'scrape' WHERE link = ? AND also_found_by IS NULL AND fetch_method != 'scrape'")
+            .run(link);
         }
       } catch (e) {}
     });
 
-    // Health check: warn if page yields 0 articles (selectors may have broken)
     if (foundOnPage === 0) {
       scrapeZeroCount++;
       if (scrapeZeroCount >= 5) {
@@ -388,7 +396,7 @@ async function scrapeGamesRadar() {
       }
     } else {
       scrapeZeroCount = 0;
-      console.log(`[Scrape] Found ${foundOnPage} articles on page, ${newArticles.length} new`);
+      console.log(`[Scrape] Found ${foundOnPage} on page, ${newArticles.length} new (RSS hadn't caught yet)`);
     }
 
     return newArticles;
@@ -403,7 +411,7 @@ async function scrapeLoop() {
   try {
     const newArticles = await scrapeGamesRadar();
     if (newArticles.length > 0) {
-      broadcast({ type: 'new_articles', articles: newArticles, method: 'scrape' });
+      broadcast({ type: 'new_articles', articles: newArticles });
       console.log(`[Scrape] +${newArticles.length} new from HTML scrape`);
     }
   } catch (e) {
@@ -464,7 +472,7 @@ app.get('/api/articles', (req, res) => {
   }
 
   const articles = db.prepare(`
-    SELECT a.*, s.title as source_title, s.feed_type
+    SELECT a.*, a.fetch_method, s.title as source_title, s.feed_type
     FROM articles a
     JOIN sources s ON s.id=a.source_id
     ${whereClause}
@@ -476,18 +484,6 @@ app.get('/api/articles', (req, res) => {
     ? db.prepare('SELECT COUNT(*) as count FROM articles a JOIN sources s ON s.id=a.source_id WHERE s.feed_type = ?').get(feedType)
     : db.prepare('SELECT COUNT(*) as count FROM articles').get();
   res.json({ articles, total: countQuery.count });
-});
-
-app.get('/api/scrape-articles', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  const offset = parseInt(req.query.offset) || 0;
-  const articles = db.prepare(`
-    SELECT * FROM scrape_articles
-    ORDER BY published_at DESC, created_at DESC
-    LIMIT ? OFFSET ?
-  `).all(limit, offset);
-  const { count } = db.prepare('SELECT COUNT(*) as count FROM scrape_articles').get();
-  res.json({ articles, total: count });
 });
 
 app.get('/', (req, res) => {

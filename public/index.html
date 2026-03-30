@@ -19,13 +19,13 @@ h1{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
 .mute{background:none;border:none;cursor:pointer;font-size:20px;padding:2px 4px;line-height:1;-webkit-tap-highlight-color:transparent;color:var(--text)}
 
 /* 3-column layout with collapsible sidebar */
-.layout{display:grid;grid-template-columns:280px 1fr 1fr 1fr;flex:1;min-height:0;transition:grid-template-columns .2s}
-.layout.collapsed{grid-template-columns:24px 1fr 1fr 1fr}
+.layout{display:grid;grid-template-columns:280px 1fr 1fr;flex:1;min-height:0;transition:grid-template-columns .2s}
+.layout.collapsed{grid-template-columns:24px 1fr 1fr}
 .layout.collapsed .sidebar{display:none}
 .layout.collapsed .sb-expand{display:block}
 
 @media(max-width:1000px){
-  .layout{grid-template-columns:24px 1fr 1fr 1fr}
+  .layout{grid-template-columns:24px 1fr 1fr}
   .layout .sidebar{display:none}
   .sb-expand{display:block}
 }
@@ -73,7 +73,6 @@ input:focus{border-color:var(--accent)}
 
 /* Column headers */
 .col-header{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;margin-bottom:10px;border-left:3px solid var(--accent);background:var(--surface);border-radius:4px;flex-shrink:0}
-.col-header.scrape{border-left:3px dashed var(--orange);color:var(--orange)}
 
 /* Article lists */
 .art-list{display:flex;flex-direction:column;gap:7px}
@@ -131,16 +130,9 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
   </section>
 
   <section class="feed" id="col-rss">
-    <div class="col-header">📰 GamesRadar — RSS Feed</div>
+    <div class="col-header">📰 GamesRadar — RSS + HTML</div>
     <div class="art-list" id="arts-rss">
-      <div class="empty"><div class="empty-i">📰</div>Waiting for RSS...</div>
-    </div>
-  </section>
-
-  <section class="feed" id="col-scrape">
-    <div class="col-header scrape">⚡ GamesRadar — HTML Polling (A/B Test)</div>
-    <div class="art-list" id="arts-scrape">
-      <div class="empty"><div class="empty-i">⚡</div>Waiting for scrape...</div>
+      <div class="empty"><div class="empty-i">📰</div>Waiting for articles...</div>
     </div>
   </section>
 </div>
@@ -151,7 +143,7 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
 </footer>
 
 <script>
-let muted=false,wsDelay=1000,ws,audioCtx,totalTwitter=0,totalRss=0,totalScrape=0;
+let muted=false,wsDelay=1000,ws,audioCtx,totalTwitter=0,totalRss=0;
 const palette=['#58a6ff','#3fb950','#d29922','#bc8cff','#fa7970','#79c0ff','#ffa657'];
 const cmap={};let ci=0;
 function getColor(n){if(!cmap[n])cmap[n]=palette[ci++%palette.length];return cmap[n];}
@@ -159,7 +151,6 @@ function getColor(n){if(!cmap[n])cmap[n]=palette[ci++%palette.length];return cma
 // Pre-register known source colors for consistency
 getColor('GamesRadar');
 getColor('@Wario64');
-getColor('GamesRadar HTML');
 
 document.getElementById('muteBtn').onclick=()=>{
   muted=!muted;
@@ -253,17 +244,10 @@ function connectWS(){
   ws.onmessage=e=>{
     const m=JSON.parse(e.data);
     if(m.type==='new_articles'&&m.articles&&m.articles.length){
-      // Route scrape articles to the scrape column
-      if(m.method==='scrape'){
-        prependToCol('arts-scrape',m.articles);
-        totalScrape+=m.articles.length;
-      }else{
-        // Route by feed_type in each article
-        const twitterArts=m.articles.filter(a=>a.feed_type==='twitter');
-        const rssArts=m.articles.filter(a=>a.feed_type==='rss');
-        if(twitterArts.length){prependToCol('arts-twitter',twitterArts);totalTwitter+=twitterArts.length;}
-        if(rssArts.length){prependToCol('arts-rss',rssArts);totalRss+=rssArts.length;}
-      }
+      const twitterArts=m.articles.filter(a=>a.feed_type==='twitter');
+      const rssArts=m.articles.filter(a=>a.feed_type==='rss'||!a.feed_type);
+      if(twitterArts.length){prependToCol('arts-twitter',twitterArts);totalTwitter+=twitterArts.length;}
+      if(rssArts.length){prependToCol('arts-rss',rssArts);totalRss+=rssArts.length;}
       updateTotalCount();
       chime();
       notify(m.articles[0].title||'New article',m.articles[0].source_title||'');
@@ -276,8 +260,7 @@ function connectWS(){
 }
 
 function updateTotalCount(){
-  const t=totalTwitter+totalRss+totalScrape;
-  document.getElementById('artCount').textContent=t+' articles';
+  document.getElementById('artCount').textContent=(totalTwitter+totalRss)+' articles';
 }
 
 async function loadSrcs(){
@@ -332,19 +315,6 @@ async function loadArtsRSS(){
   }catch(e){console.error('[loadArtsRSS]',e);}
 }
 
-async function loadArtsScrape(){
-  try{
-    const r=await fetch('/api/scrape-articles?limit=50');
-    const d=await r.json();
-    totalScrape=d.total||0;
-    const el=document.getElementById('arts-scrape');
-    const arts=d.articles||[];
-    if(!arts.length){el.innerHTML='<div class="empty"><div class="empty-i">⚡</div>Waiting for scrape...</div>';return;}
-    el.innerHTML=arts.map(a=>artCardHTML({...a,source_title:'GamesRadar HTML',feed_type:'scrape'})).join('');
-    updateTotalCount();
-  }catch(e){console.error('[loadArtsScrape]',e);}
-}
-
 async function addSrc(){
   const input=document.getElementById('urlIn');
   const url=input.value.trim();
@@ -385,12 +355,7 @@ function prependToCol(colId,arts){
   const el=document.getElementById(colId);
   const em=el.querySelector('.empty');
   if(em)em.remove();
-  // For scrape articles, add source_title so the card renders correctly
-  const mapped=arts.map(a=>{
-    if(!a.source_title&&!a.feed_type) return {...a,source_title:'GamesRadar HTML',feed_type:'scrape'};
-    return a;
-  });
-  el.insertAdjacentHTML('afterbegin',mapped.map(artCardHTML).join(''));
+  el.insertAdjacentHTML('afterbegin',arts.map(artCardHTML).join(''));
 }
 
 // Shared article card used by all 3 columns — shows dual timestamps
@@ -403,6 +368,8 @@ function artCardHTML(a){
     <a class="art-link" href="${esc(a.link||'#')}" target="_blank" rel="noopener noreferrer">${esc(a.title||'Untitled')}</a>
     <div class="art-meta">
       <span class="art-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${esc(st)}</span>
+      ${a.fetch_method?`<span style="font-size:9px;color:var(--muted);opacity:.6">via ${a.fetch_method}</span>`:''}
+      ${a.also_found_by?`<span style="font-size:9px;color:var(--green);opacity:.8">✓ also ${a.also_found_by}</span>`:''}
     </div>
     <div class="art-time" style="margin-top:4px">
       ${pubDate?`<div>Published: ${relTime(pubDate)} <span style="opacity:.6">(${fmtTime(pubDate)})</span></div>`:''}
@@ -443,9 +410,8 @@ document.getElementById('addBtn').onclick=addSrc;
 document.getElementById('urlIn').onkeydown=e=>{if(e.key==='Enter')addSrc();};
 
 connectWS();
-loadSrcs().then(()=>{loadArtsTwitter();loadArtsRSS();loadArtsScrape();});
-// Refresh all columns periodically
-setInterval(()=>{loadArtsTwitter();loadArtsRSS();loadArtsScrape();},60000);
+loadSrcs().then(()=>{loadArtsTwitter();loadArtsRSS();});
+setInterval(()=>{loadArtsTwitter();loadArtsRSS();},60000);
 </script>
 </body>
 </html>
