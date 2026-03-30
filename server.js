@@ -274,6 +274,23 @@ function isBlueskyUrl(url) {
   return /bsky\.app|bsky\.social/i.test(url);
 }
 
+// Cross-platform matching: match Wario64 posts between Bluesky and Twitter by text similarity
+function crossPlatformMatch(title, fetchMethod) {
+  if (!title || title.length < 20) return;
+  // Take first 60 chars as search key (posts are identical but may have minor formatting diffs)
+  const searchKey = title.substring(0, 60).replace(/[%_]/g, '');
+  const otherMethod = fetchMethod === 'bluesky' ? 'twitter' : fetchMethod === 'twitter' ? 'bluesky' : null;
+  if (!otherMethod) return;
+  try {
+    db.prepare(`
+      UPDATE articles SET also_found_by = ?
+      WHERE fetch_method = ? AND also_found_by IS NULL
+      AND title LIKE ? || '%'
+      LIMIT 1
+    `).run(fetchMethod, otherMethod, searchKey);
+  } catch (e) {}
+}
+
 // Fetch and store articles for a source
 async function fetchAndStore(source, isInitial = false) {
   let result;
@@ -328,8 +345,9 @@ async function fetchAndStore(source, isInitial = false) {
       if (info.changes > 0 && !isInitial) {
         const art = db.prepare('SELECT * FROM articles WHERE rowid=?').get(info.lastInsertRowid);
         if (art) newArticles.push({ ...art, source_title: feedTitle, feed_type: source.feed_type });
+        // Cross-platform match for Wario64 (twitter <-> bluesky)
+        if (fetchMethod === 'twitter') crossPlatformMatch(title, 'twitter');
       } else if (info.changes === 0 && link) {
-        // Article already exists — mark that this method also found it
         db.prepare("UPDATE articles SET also_found_by = ? WHERE link = ? AND also_found_by IS NULL AND fetch_method != ?")
           .run(fetchMethod, link, fetchMethod);
       }
@@ -551,6 +569,7 @@ function insertBlueskyArticle(source, title, link, published) {
         const enriched = { ...art, source_title: source.title, feed_type: 'bluesky' };
         broadcast({ type: 'new_articles', articles: [enriched] });
         console.log(`[Bluesky] NEW: ${title.substring(0, 60)}`);
+        crossPlatformMatch(title, 'bluesky');
         return true;
       }
     }
