@@ -287,7 +287,14 @@ function connectWS(){
     if(m.type==='new_articles'&&m.articles&&m.articles.length){
       const twitterArts=m.articles.filter(a=>a.feed_type==='twitter'||a.feed_type==='bluesky');
       const rssArts=m.articles.filter(a=>a.feed_type==='rss'||!a.feed_type);
-      if(twitterArts.length){prependToCol('arts-twitter',twitterArts);totalTwitter+=twitterArts.length;}
+      // Dedup Wario real-time: skip if same text already visible
+      const warioEl=document.getElementById('arts-twitter');
+      const existingTexts=new Set([...warioEl.querySelectorAll('.art-link')].map(l=>l.textContent.substring(0,50).toLowerCase().replace(/\s+/g,' ').trim()));
+      const newWario=twitterArts.filter(a=>{
+        const key=a.title?.substring(0,50).toLowerCase().replace(/\s+/g,' ').trim();
+        return key&&!existingTexts.has(key);
+      });
+      if(newWario.length){prependToCol('arts-twitter',newWario);totalTwitter+=newWario.length;}
       if(rssArts.length){prependToCol('arts-rss',rssArts);totalRss+=rssArts.length;}
       updateTotalCount();
       chime();
@@ -355,12 +362,29 @@ async function loadArtsTwitter(){
     ]);
     const tData = await tRes.json();
     const bData = await bRes.json();
-    totalTwitter = (tData.total||0) + (bData.total||0);
-    const arts = [...(tData.articles||[]), ...(bData.articles||[])];
-    arts.sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
+    const all = [...(tData.articles||[]), ...(bData.articles||[])];
+    all.sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
+    // Dedup by text similarity — keep earliest, merge badges
+    const seen=new Map();
+    const deduped=[];
+    for(const a of all){
+      const key=a.title?.substring(0,50).toLowerCase().replace(/\s+/g,' ').trim();
+      if(!key)continue;
+      if(seen.has(key)){
+        // Merge: mark the kept article as found by both
+        const kept=seen.get(key);
+        if(!kept.also_found_by&&kept.fetch_method!==a.fetch_method){
+          kept.also_found_by=a.fetch_method;
+        }
+      }else{
+        seen.set(key,a);
+        deduped.push(a);
+      }
+    }
+    totalTwitter=deduped.length;
     const el=document.getElementById('arts-twitter');
-    if(!arts.length){el.innerHTML='<div class="empty"><div class="empty-i">🦋</div>Waiting for posts...</div>';return;}
-    el.innerHTML=arts.slice(0,50).map(artCardHTML).join('');
+    if(!deduped.length){el.innerHTML='<div class="empty"><div class="empty-i">🦋</div>Waiting for posts...</div>';return;}
+    el.innerHTML=deduped.slice(0,50).map(artCardHTML).join('');
     updateTotalCount();
   }catch(e){console.error('[loadArtsTwitter]',e);}
 }
