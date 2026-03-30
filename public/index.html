@@ -458,7 +458,7 @@ function prependToCol(colId,arts){
 
 // Shared article card used by all 3 columns — shows dual timestamps
 function artCardHTML(a){
-  const st=a.source_title||'Unknown';
+  const st=(a.source_title||'Unknown').replace(/\s*\(Bluesky\)/i,'');
   const c=getColor(st);
   const pubDate=parseDate(a.published_at);
   const fetchDate=parseDate(a.created_at);
