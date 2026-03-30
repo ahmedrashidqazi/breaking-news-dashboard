@@ -162,8 +162,8 @@ const cmap={};let ci=0;
 function getColor(n){if(!cmap[n])cmap[n]=palette[ci++%palette.length];return cmap[n];}
 
 // Pre-register known source colors for consistency
+cmap['@Wario64']='#bc8cff';
 getColor('GamesRadar');
-getColor('@Wario64');
 
 document.getElementById('muteBtn').onclick=()=>{
   muted=!muted;
