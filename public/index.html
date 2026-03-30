@@ -72,7 +72,7 @@ input:focus{border-color:var(--accent)}
 .del:hover{color:var(--red)}
 .badges{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
 .badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600}
-.badge.rss{background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3)}
+.badge.rss{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
 .badge.twitter{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
 .badge.bluesky{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
 .badge.error{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.3)}
@@ -136,14 +136,14 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
   </aside>
 
   <section class="feed" id="col-twitter">
-    <div class="col-header">🦋 @Wario64 — Bluesky + Twitter</div>
+    <div class="col-header">🦋 @Wario64</div>
     <div class="art-list" id="arts-twitter">
       <div class="empty"><div class="empty-i">🦋</div>Waiting for posts...</div>
     </div>
   </section>
 
   <section class="feed" id="col-rss">
-    <div class="col-header">📰 GamesRadar — RSS + HTML</div>
+    <div class="col-header">📰 GamesRadar</div>
     <div class="art-list" id="arts-rss">
       <div class="empty"><div class="empty-i">📰</div>Waiting for articles...</div>
     </div>
@@ -344,7 +344,7 @@ async function loadSrcs(){
     groups.push(`<div class="src">
       <div class="src-top"><div>
         <div class="src-name">GamesRadar+</div>
-        <div class="badges"><span class="badge rss">RSS</span><span class="badge" style="background:rgba(210,153,34,.15);color:var(--orange);border:1px solid rgba(210,153,34,.3)">HTML</span></div>
+        <div class="badges"><span class="badge rss">RSS</span><span class="badge bluesky">HTML</span></div>
       </div></div>
       <div class="src-meta">${totalArts} articles · ${lp}</div>
     </div>`);
