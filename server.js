@@ -326,7 +326,7 @@ async function fetchAndStore(source, isInitial = false) {
     source.title = feedTitle;
   }
 
-  const fetchMethod = source.feed_type === 'twitter' ? 'twitter' : 'rss';
+  const fetchMethod = source.feed_type === 'twitter' ? 'twitter' : source.feed_type === 'bluesky' ? 'bluesky' : 'rss';
   const insertStmt = db.prepare(`
     INSERT OR IGNORE INTO articles (source_id, title, link, description, published_at, guid, fetch_method)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -346,7 +346,7 @@ async function fetchAndStore(source, isInitial = false) {
         const art = db.prepare('SELECT * FROM articles WHERE rowid=?').get(info.lastInsertRowid);
         if (art) newArticles.push({ ...art, source_title: feedTitle, feed_type: source.feed_type });
         // Cross-platform match for Wario64 (twitter <-> bluesky)
-        if (fetchMethod === 'twitter') crossPlatformMatch(title, 'twitter');
+        if (fetchMethod === 'twitter' || fetchMethod === 'bluesky') crossPlatformMatch(title, fetchMethod);
       } else if (info.changes === 0 && link) {
         db.prepare("UPDATE articles SET also_found_by = ? WHERE link = ? AND also_found_by IS NULL AND fetch_method != ?")
           .run(fetchMethod, link, fetchMethod);
@@ -522,7 +522,7 @@ app.get('/', (req, res) => {
 
 // Polling loop
 async function pollAll() {
-  const sources = db.prepare('SELECT * FROM sources').all();
+  const sources = db.prepare("SELECT * FROM sources WHERE feed_type != 'bluesky'").all();
   await Promise.allSettled(sources.map(async (source) => {
     try {
       const { newArticles } = await fetchAndStore(source, false);
