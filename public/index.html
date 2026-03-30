@@ -123,9 +123,9 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
   </aside>
 
   <section class="feed" id="col-twitter">
-    <div class="col-header">🐦 @Wario64 — Twitter via Nitter</div>
+    <div class="col-header">🦋 @Wario64 — Bluesky + Twitter</div>
     <div class="art-list" id="arts-twitter">
-      <div class="empty"><div class="empty-i">🐦</div>Waiting for tweets...</div>
+      <div class="empty"><div class="empty-i">🦋</div>Waiting for posts...</div>
     </div>
   </section>
 
@@ -244,7 +244,7 @@ function connectWS(){
   ws.onmessage=e=>{
     const m=JSON.parse(e.data);
     if(m.type==='new_articles'&&m.articles&&m.articles.length){
-      const twitterArts=m.articles.filter(a=>a.feed_type==='twitter');
+      const twitterArts=m.articles.filter(a=>a.feed_type==='twitter'||a.feed_type==='bluesky');
       const rssArts=m.articles.filter(a=>a.feed_type==='rss'||!a.feed_type);
       if(twitterArts.length){prependToCol('arts-twitter',twitterArts);totalTwitter+=twitterArts.length;}
       if(rssArts.length){prependToCol('arts-rss',rssArts);totalRss+=rssArts.length;}
@@ -291,13 +291,18 @@ async function loadSrcs(){
 
 async function loadArtsTwitter(){
   try{
-    const r=await fetch('/api/articles?feed_type=twitter&limit=50');
-    const d=await r.json();
-    totalTwitter=d.total||0;
+    const [tRes, bRes] = await Promise.all([
+      fetch('/api/articles?feed_type=twitter&limit=50'),
+      fetch('/api/articles?feed_type=bluesky&limit=50')
+    ]);
+    const tData = await tRes.json();
+    const bData = await bRes.json();
+    totalTwitter = (tData.total||0) + (bData.total||0);
+    const arts = [...(tData.articles||[]), ...(bData.articles||[])];
+    arts.sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
     const el=document.getElementById('arts-twitter');
-    const arts=d.articles||[];
-    if(!arts.length){el.innerHTML='<div class="empty"><div class="empty-i">🐦</div>Waiting for tweets...</div>';return;}
-    el.innerHTML=arts.map(artCardHTML).join('');
+    if(!arts.length){el.innerHTML='<div class="empty"><div class="empty-i">🦋</div>Waiting for posts...</div>';return;}
+    el.innerHTML=arts.slice(0,50).map(artCardHTML).join('');
     updateTotalCount();
   }catch(e){console.error('[loadArtsTwitter]',e);}
 }

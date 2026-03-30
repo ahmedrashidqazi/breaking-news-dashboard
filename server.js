@@ -15,11 +15,19 @@ const wss = new WebSocketServer({ server });
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+const WebSocket = require('ws');
+
 const PORT = process.env.PORT || 3001;
 const POLL_INTERVAL = 15_000;
 const SCRAPE_INTERVAL = 60_000;
+const BLUESKY_POLL_INTERVAL = 30_000;
 const SCRAPE_URL = 'https://www.gamesradar.com/games/news/';
 const SCRAPE_UA = 'Mozilla/5.0 (compatible; NewsAggregator/1.0)';
+
+// Bluesky config
+const WARIO64_DID = 'did:plc:knj5sw5al3sukl6vhkpi7637';
+const WARIO64_HANDLE = 'wario64.bsky.social';
+const JETSTREAM_URL = `wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post&wantedDids=${WARIO64_DID}`;
 
 // Database setup
 const db = new Database(path.join(__dirname, 'news.db'));
@@ -260,6 +268,10 @@ async function fetchTwitterFeed(twitterUrl) {
 
 function isTwitterUrl(url) {
   return /twitter\.com|x\.com/i.test(url);
+}
+
+function isBlueskyUrl(url) {
+  return /bsky\.app|bsky\.social/i.test(url);
 }
 
 // Fetch and store articles for a source
@@ -513,7 +525,129 @@ async function pollLoop() {
 }
 pollLoop();
 
-// WebSocket
+// ── Bluesky Integration (Wario64) ────────────────────────────────────────────
+
+function ensureBlueskySource() {
+  let src = db.prepare("SELECT * FROM sources WHERE feed_type = 'bluesky' LIMIT 1").get();
+  if (!src) {
+    db.prepare("INSERT INTO sources (url, title, feed_type, status) VALUES (?, ?, 'bluesky', 'active')")
+      .run(`https://bsky.app/profile/${WARIO64_HANDLE}`, '@Wario64 (Bluesky)');
+    src = db.prepare("SELECT * FROM sources WHERE feed_type = 'bluesky' LIMIT 1").get();
+    console.log('[Bluesky] Created source:', src.title);
+  }
+  return src;
+}
+
+function insertBlueskyArticle(source, title, link, published) {
+  const guid = 'bsky-' + link;
+  try {
+    const info = db.prepare(`
+      INSERT OR IGNORE INTO articles (source_id, title, link, published_at, guid, fetch_method)
+      VALUES (?, ?, ?, ?, ?, 'bluesky')
+    `).run(source.id, title, link, published, guid);
+    if (info.changes > 0) {
+      const art = db.prepare('SELECT * FROM articles WHERE rowid=?').get(info.lastInsertRowid);
+      if (art) {
+        const enriched = { ...art, source_title: source.title, feed_type: 'bluesky' };
+        broadcast({ type: 'new_articles', articles: [enriched] });
+        console.log(`[Bluesky] NEW: ${title.substring(0, 60)}`);
+        return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+// Jetstream WebSocket — real-time push from Bluesky
+function connectJetstream() {
+  const src = ensureBlueskySource();
+  let reconnectDelay = 1000;
+
+  function connect() {
+    console.log('[Bluesky] Connecting to Jetstream...');
+    const jsWs = new WebSocket(JETSTREAM_URL);
+
+    jsWs.on('open', () => {
+      console.log('[Bluesky] Jetstream connected — real-time mode');
+      reconnectDelay = 1000;
+    });
+
+    jsWs.on('message', (data) => {
+      try {
+        const event = JSON.parse(data);
+        if (event.kind !== 'commit' || event.commit?.operation !== 'create') return;
+        const record = event.commit?.record;
+        if (!record || record.$type !== 'app.bsky.feed.post') return;
+
+        const text = record.text || '';
+        if (text.length < 5) return;
+
+        // Extract the post URI to build the link
+        const rkey = event.commit.rkey;
+        const link = `https://bsky.app/profile/${WARIO64_HANDLE}/post/${rkey}`;
+        const published = record.createdAt || new Date().toISOString();
+
+        insertBlueskyArticle(src, text.substring(0, 280), link, published);
+      } catch (e) {
+        // Ignore parse errors on individual messages
+      }
+    });
+
+    jsWs.on('close', () => {
+      console.log(`[Bluesky] Jetstream disconnected, reconnecting in ${reconnectDelay / 1000}s`);
+      setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    });
+
+    jsWs.on('error', (e) => {
+      console.error('[Bluesky] Jetstream error:', e.message);
+      jsWs.close();
+    });
+  }
+
+  connect();
+}
+
+// Bluesky REST API polling — fallback in case Jetstream misses something
+async function pollBluesky() {
+  const src = ensureBlueskySource();
+  try {
+    const res = await fetch(
+      `https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${WARIO64_DID}&limit=20`,
+      { timeout: 10000 }
+    );
+    if (!res.ok) {
+      console.log(`[Bluesky] REST API HTTP ${res.status}`);
+      return;
+    }
+    const data = await res.json();
+    let newCount = 0;
+    for (const item of (data.feed || [])) {
+      const post = item.post;
+      if (!post || !post.record) continue;
+      const text = post.record.text || '';
+      if (text.length < 5) continue;
+      const link = `https://bsky.app/profile/${WARIO64_HANDLE}/post/${post.uri.split('/').pop()}`;
+      const published = post.record.createdAt || post.indexedAt;
+      if (insertBlueskyArticle(src, text.substring(0, 280), link, published)) newCount++;
+    }
+    if (newCount > 0) console.log(`[Bluesky] REST poll: +${newCount} new`);
+    db.prepare("UPDATE sources SET last_polled_at=datetime('now') WHERE id=?").run(src.id);
+  } catch (e) {
+    console.error('[Bluesky] REST poll error:', e.message);
+  }
+}
+
+async function blueskyPollLoop() {
+  await pollBluesky();
+  setTimeout(blueskyPollLoop, BLUESKY_POLL_INTERVAL);
+}
+
+// Start Bluesky: Jetstream for real-time + REST polling as backup
+connectJetstream();
+blueskyPollLoop();
+
+// Dashboard WebSocket
 wss.on('connection', ws => {
   ws.send(JSON.stringify({ type: 'connected' }));
   console.log(`[WS] Client connected (total: ${wss.clients.size})`);
