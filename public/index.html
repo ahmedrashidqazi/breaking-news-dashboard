@@ -29,12 +29,20 @@ h1{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
   .layout .sidebar{display:none}
   .sb-expand{display:block}
 }
+/* Mobile tabs */
+.mobile-tabs{display:none;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+.mobile-tabs .tab{flex:1;padding:10px 0;text-align:center;font-size:13px;font-weight:600;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.mobile-tabs .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
 @media(max-width:700px){
-  body{height:auto;overflow:auto}
-  .layout,.layout.collapsed{grid-template-columns:1fr;height:auto}
+  body{height:100vh;overflow:hidden}
+  .mobile-tabs{display:flex}
+  .layout,.layout.collapsed{grid-template-columns:1fr;flex:1;min-height:0;height:auto}
   .layout .sidebar{display:none}
   .sb-expand{display:none !important}
-  .feed{overflow:visible;height:auto;min-height:300px}
+  .feed{overflow-y:auto;display:none !important;padding:10px;flex:1;min-height:0}
+  .feed.mobile-active{display:flex !important;flex-direction:column}
+  .col-header{display:none}
 }
 
 /* Sidebar collapse/expand controls */
@@ -66,6 +74,7 @@ input:focus{border-color:var(--accent)}
 .badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600}
 .badge.rss{background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3)}
 .badge.twitter{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
+.badge.bluesky{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
 .badge.error{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.3)}
 .badge.stale{background:rgba(210,153,34,.15);color:var(--orange);border:1px solid rgba(210,153,34,.3)}
 .src-meta{font-size:11px;color:var(--muted);margin-top:4px}
@@ -104,6 +113,10 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
   <button class="mute" id="muteBtn" title="Toggle sound alerts">🔔</button>
 </header>
 
+<div class="mobile-tabs" id="mobileTabs">
+  <button class="tab active" data-col="col-twitter">🦋 Wario64</button>
+  <button class="tab" data-col="col-rss">📰 GamesRadar</button>
+</div>
 <div class="layout" id="layout">
   <div class="sb-expand" id="sbExpand" title="Expand sidebar">◂</div>
   <aside class="sidebar" id="sidebar">
@@ -164,6 +177,34 @@ document.getElementById('toggleSidebar').onclick=()=>{
 document.getElementById('sbExpand').onclick=()=>{
   document.getElementById('layout').classList.remove('collapsed');
 };
+
+// Mobile tab switching
+function initMobileTabs(){
+  const tabs=document.querySelectorAll('.mobile-tabs .tab');
+  const feeds=document.querySelectorAll('.feed');
+  // Set initial active
+  if(window.innerWidth<=700){
+    feeds.forEach(f=>f.classList.remove('mobile-active'));
+    document.getElementById('col-twitter').classList.add('mobile-active');
+  }
+  tabs.forEach(tab=>{
+    tab.onclick=()=>{
+      tabs.forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      feeds.forEach(f=>f.classList.remove('mobile-active'));
+      document.getElementById(tab.dataset.col).classList.add('mobile-active');
+    };
+  });
+}
+initMobileTabs();
+window.addEventListener('resize',()=>{
+  const feeds=document.querySelectorAll('.feed');
+  if(window.innerWidth>700){
+    feeds.forEach(f=>f.classList.remove('mobile-active'));
+  }else if(!document.querySelector('.feed.mobile-active')){
+    document.getElementById('col-twitter').classList.add('mobile-active');
+  }
+});
 
 // Audio init via modal tap (required by browsers for sound to work)
 function initAudio(){
