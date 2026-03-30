@@ -289,9 +289,9 @@ function connectWS(){
       const rssArts=m.articles.filter(a=>a.feed_type==='rss'||!a.feed_type);
       // Dedup Wario real-time: skip if same text already visible
       const warioEl=document.getElementById('arts-twitter');
-      const existingTexts=new Set([...warioEl.querySelectorAll('.art-link')].map(l=>l.textContent.substring(0,50).toLowerCase().replace(/\s+/g,' ').trim()));
+      const existingTexts=new Set([...warioEl.querySelectorAll('.art-link')].map(l=>l.textContent.toLowerCase().replace(/https?:\/\//g,'').substring(0,50).replace(/\s+/g,' ').trim()));
       const newWario=twitterArts.filter(a=>{
-        const key=a.title?.substring(0,50).toLowerCase().replace(/\s+/g,' ').trim();
+        const key=a.title?.toLowerCase().replace(/https?:\/\//g,'').substring(0,50).replace(/\s+/g,' ').trim();
         return key&&!existingTexts.has(key);
       });
       if(newWario.length){prependToCol('arts-twitter',newWario);totalTwitter+=newWario.length;}
@@ -368,7 +368,7 @@ async function loadArtsTwitter(){
     const seen=new Map();
     const deduped=[];
     for(const a of all){
-      const key=a.title?.substring(0,50).toLowerCase().replace(/\s+/g,' ').trim();
+      const key=a.title?.toLowerCase().replace(/https?:\/\//g,'').substring(0,50).replace(/\s+/g,' ').trim();
       if(!key)continue;
       if(seen.has(key)){
         // Merge: mark the kept article as found by both
