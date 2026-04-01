@@ -623,6 +623,9 @@ async function scrapeAmazonGames() {
         if (info.changes > 0) {
           const art = db.prepare('SELECT * FROM articles WHERE rowid=?').get(info.lastInsertRowid);
           if (art) newArticles.push({ ...art, source_title: src.title, feed_type: 'amazon' });
+        } else if (info.changes === 0) {
+          db.prepare("UPDATE articles SET also_found_by = 'scrape' WHERE link = ? AND also_found_by IS NULL AND fetch_method != 'scrape'")
+            .run(link);
         }
       } catch (e) {}
     });
@@ -665,9 +668,13 @@ async function pollAmazonSitemap() {
       const url = $(el).text().trim();
       if (!url || !url.includes('/articles/')) return;
 
-      // Check if already in DB
+      // Check if already in DB — if so, mark as also found by sitemap
       const existing = db.prepare('SELECT id FROM articles WHERE link = ?').get(url);
-      if (existing) return;
+      if (existing) {
+        db.prepare("UPDATE articles SET also_found_by = 'sitemap' WHERE id = ? AND also_found_by IS NULL AND fetch_method != 'sitemap'")
+          .run(existing.id);
+        return;
+      }
 
       // Extract title from URL slug: last path segment
       const slug = url.replace(/\/$/, '').split('/').pop() || '';
