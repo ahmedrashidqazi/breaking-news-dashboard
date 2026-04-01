@@ -307,10 +307,13 @@ function connectWS(){
       if(newWario.length){prependToCol('arts-twitter',newWario);totalTwitter+=newWario.length;}
       if(rssArts.length){prependToCol('arts-rss',rssArts);totalRss+=rssArts.length;}
       if(amazonArts.length){prependToCol('arts-amazon',amazonArts);totalAmazon+=amazonArts.length;}
-      updateTotalCount();
-      chime();
-      notify(m.articles[0].title||'New article',m.articles[0].source_title||'');
-      document.getElementById('lastUp').textContent='Updated '+new Date().toLocaleTimeString();
+      const addedCount=newWario.length+rssArts.length+amazonArts.length;
+      if(addedCount>0){
+        updateTotalCount();
+        chime();
+        notify(m.articles[0].title||'New article',m.articles[0].source_title||'');
+        document.getElementById('lastUp').textContent='Updated '+new Date().toLocaleTimeString();
+      }
     }else if(m.type==='source_added'||m.type==='source_deleted'){
       loadSrcs();
       if(m.type==='source_deleted'){loadArtsTwitter();loadArtsRSS();loadArtsAmazon();}
