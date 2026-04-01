@@ -18,14 +18,14 @@ h1{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
 .dot.on{background:var(--green)}
 .mute{background:none;border:none;cursor:pointer;font-size:20px;padding:2px 4px;line-height:1;-webkit-tap-highlight-color:transparent;color:var(--text)}
 
-/* 3-column layout with collapsible sidebar */
-.layout{display:grid;grid-template-columns:280px 1fr 1fr;flex:1;min-height:0;transition:grid-template-columns .2s}
-.layout.collapsed{grid-template-columns:24px 1fr 1fr}
+/* 4-column layout (sidebar + 3 feeds) with collapsible sidebar */
+.layout{display:grid;grid-template-columns:280px 1fr 1fr 1fr;flex:1;min-height:0;transition:grid-template-columns .2s}
+.layout.collapsed{grid-template-columns:24px 1fr 1fr 1fr}
 .layout.collapsed .sidebar{display:none}
 .layout.collapsed .sb-expand{display:block}
 
-@media(max-width:1000px){
-  .layout{grid-template-columns:24px 1fr 1fr}
+@media(max-width:1200px){
+  .layout{grid-template-columns:24px 1fr 1fr 1fr}
   .layout .sidebar{display:none}
   .sb-expand{display:block}
 }
@@ -116,6 +116,7 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
 <div class="mobile-tabs" id="mobileTabs">
   <button class="tab active" data-col="col-twitter">🦋 Wario64</button>
   <button class="tab" data-col="col-rss">📰 GamesRadar</button>
+  <button class="tab" data-col="col-amazon">🎮 Amazon</button>
 </div>
 <div class="layout" id="layout">
   <div class="sb-expand" id="sbExpand" title="Expand sidebar">◂</div>
@@ -148,6 +149,13 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
       <div class="empty"><div class="empty-i">📰</div>Waiting for articles...</div>
     </div>
   </section>
+
+  <section class="feed" id="col-amazon">
+    <div class="col-header">🎮 Amazon Games</div>
+    <div class="art-list" id="arts-amazon">
+      <div class="empty"><div class="empty-i">🎮</div>Waiting for articles...</div>
+    </div>
+  </section>
 </div>
 
 <footer>
@@ -156,7 +164,7 @@ footer{background:var(--surface);border-top:1px solid var(--border);padding:7px 
 </footer>
 
 <script>
-let muted=false,wsDelay=1000,ws,audioCtx,totalTwitter=0,totalRss=0;
+let muted=false,wsDelay=1000,ws,audioCtx,totalTwitter=0,totalRss=0,totalAmazon=0;
 const palette=['#58a6ff','#3fb950','#d29922','#bc8cff','#fa7970','#79c0ff','#ffa657'];
 const cmap={};let ci=0;
 function getColor(n){if(!cmap[n])cmap[n]=palette[ci++%palette.length];return cmap[n];}
@@ -164,6 +172,7 @@ function getColor(n){if(!cmap[n])cmap[n]=palette[ci++%palette.length];return cma
 // Pre-register known source colors for consistency
 cmap['@Wario64']='#bc8cff';
 cmap[' Latest from GamesRadar+ in Games ']='#d29922';
+cmap['Amazon Games']='#ff9900';
 
 document.getElementById('muteBtn').onclick=()=>{
   muted=!muted;
@@ -287,6 +296,7 @@ function connectWS(){
     if(m.type==='new_articles'&&m.articles&&m.articles.length){
       const twitterArts=m.articles.filter(a=>a.feed_type==='twitter'||a.feed_type==='bluesky');
       const rssArts=m.articles.filter(a=>a.feed_type==='rss'||!a.feed_type);
+      const amazonArts=m.articles.filter(a=>a.feed_type==='amazon');
       // Dedup Wario real-time: skip if same text already visible
       const warioEl=document.getElementById('arts-twitter');
       const existingTexts=new Set([...warioEl.querySelectorAll('.art-link')].map(l=>l.textContent.toLowerCase().replace(/https?:\/\//g,'').substring(0,50).replace(/\s+/g,' ').trim()));
@@ -296,19 +306,20 @@ function connectWS(){
       });
       if(newWario.length){prependToCol('arts-twitter',newWario);totalTwitter+=newWario.length;}
       if(rssArts.length){prependToCol('arts-rss',rssArts);totalRss+=rssArts.length;}
+      if(amazonArts.length){prependToCol('arts-amazon',amazonArts);totalAmazon+=amazonArts.length;}
       updateTotalCount();
       chime();
       notify(m.articles[0].title||'New article',m.articles[0].source_title||'');
       document.getElementById('lastUp').textContent='Updated '+new Date().toLocaleTimeString();
     }else if(m.type==='source_added'||m.type==='source_deleted'){
       loadSrcs();
-      if(m.type==='source_deleted'){loadArtsTwitter();loadArtsRSS();}
+      if(m.type==='source_deleted'){loadArtsTwitter();loadArtsRSS();loadArtsAmazon();}
     }
   };
 }
 
 function updateTotalCount(){
-  document.getElementById('artCount').textContent=(totalTwitter+totalRss)+' articles';
+  document.getElementById('artCount').textContent=(totalTwitter+totalRss+totalAmazon)+' articles';
 }
 
 async function loadSrcs(){
@@ -345,6 +356,20 @@ async function loadSrcs(){
       <div class="src-top"><div>
         <div class="src-name">GamesRadar+</div>
         <div class="badges"><span class="badge rss">RSS</span><span class="badge bluesky">HTML</span></div>
+      </div></div>
+      <div class="src-meta">${totalArts} articles · ${lp}</div>
+    </div>`);
+  }
+
+  const amazonSrcs=srcs.filter(s=>s.feed_type==='amazon');
+  if(amazonSrcs.length){
+    const totalArts=amazonSrcs.reduce((s,x)=>s+(x.article_count||0),0);
+    const latest=amazonSrcs.map(s=>s.last_polled_at).filter(Boolean).sort().pop();
+    const lp=latest?relTime(new Date(latest.endsWith('Z')?latest:latest+' UTC')):'never';
+    groups.push(`<div class="src">
+      <div class="src-top"><div>
+        <div class="src-name">Amazon Games</div>
+        <div class="badges"><span class="badge rss">SCRAPE</span><span class="badge bluesky">SITEMAP</span></div>
       </div></div>
       <div class="src-meta">${totalArts} articles · ${lp}</div>
     </div>`);
@@ -413,6 +438,19 @@ async function loadArtsRSS(){
   }catch(e){console.error('[loadArtsRSS]',e);}
 }
 
+async function loadArtsAmazon(){
+  try{
+    const r=await fetch('/api/articles?feed_type=amazon&limit=50');
+    const d=await r.json();
+    totalAmazon=d.total||0;
+    const el=document.getElementById('arts-amazon');
+    const arts=d.articles||[];
+    if(!arts.length){el.innerHTML='<div class="empty"><div class="empty-i">🎮</div>Waiting for articles...</div>';return;}
+    el.innerHTML=arts.map(artCardHTML).join('');
+    updateTotalCount();
+  }catch(e){console.error('[loadArtsAmazon]',e);}
+}
+
 async function addSrc(){
   const input=document.getElementById('urlIn');
   const url=input.value.trim();
@@ -431,7 +469,7 @@ async function addSrc(){
     }else{
       input.value='';
       await loadSrcs();
-      loadArtsTwitter();loadArtsRSS();
+      loadArtsTwitter();loadArtsRSS();loadArtsAmazon();
     }
   }catch(e){
     errEl.textContent='Network error';
@@ -446,7 +484,7 @@ async function delSrc(id){
   if(!confirm('Remove this source?'))return;
   await fetch('/api/sources/'+id,{method:'DELETE'});
   loadSrcs();
-  loadArtsTwitter();loadArtsRSS();
+  loadArtsTwitter();loadArtsRSS();loadArtsAmazon();
 }
 
 function prependToCol(colId,arts){
@@ -508,8 +546,8 @@ document.getElementById('addBtn').onclick=addSrc;
 document.getElementById('urlIn').onkeydown=e=>{if(e.key==='Enter')addSrc();};
 
 connectWS();
-loadSrcs().then(()=>{loadArtsTwitter();loadArtsRSS();});
-setInterval(()=>{loadArtsTwitter();loadArtsRSS();},60000);
+loadSrcs().then(()=>{loadArtsTwitter();loadArtsRSS();loadArtsAmazon();});
+setInterval(()=>{loadArtsTwitter();loadArtsRSS();loadArtsAmazon();},60000);
 </script>
 </body>
 </html>

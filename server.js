@@ -24,6 +24,12 @@ const BLUESKY_POLL_INTERVAL = 30_000;
 const SCRAPE_URL = 'https://www.gamesradar.com/games/news/';
 const SCRAPE_UA = 'Mozilla/5.0 (compatible; NewsAggregator/1.0)';
 
+// Amazon Games config
+const AMAZON_SCRAPE_URL = 'https://www.amazongamestudios.com/en-us/news';
+const AMAZON_SITEMAP_URL = 'https://www.amazongamestudios.com/en-us/sitemaps/blogs.xml';
+const AMAZON_SCRAPE_INTERVAL = 60_000;
+const AMAZON_SITEMAP_INTERVAL = 120_000;
+
 // Bluesky config
 const WARIO64_DID = 'did:plc:knj5sw5al3sukl6vhkpi7637';
 const WARIO64_HANDLE = 'wario64.bsky.social';
@@ -522,7 +528,7 @@ app.get('/', (req, res) => {
 
 // Polling loop
 async function pollAll() {
-  const sources = db.prepare("SELECT * FROM sources WHERE feed_type != 'bluesky'").all();
+  const sources = db.prepare("SELECT * FROM sources WHERE feed_type NOT IN ('bluesky', 'amazon')").all();
   await Promise.allSettled(sources.map(async (source) => {
     try {
       const { newArticles } = await fetchAndStore(source, false);
@@ -542,6 +548,184 @@ async function pollLoop() {
   setTimeout(pollLoop, POLL_INTERVAL);
 }
 pollLoop();
+
+// ── Amazon Games Integration ──────────────────────────────────────────────────
+
+function ensureAmazonSource() {
+  let src = db.prepare("SELECT * FROM sources WHERE feed_type = 'amazon' LIMIT 1").get();
+  if (!src) {
+    db.prepare("INSERT INTO sources (url, title, feed_type, status) VALUES (?, ?, 'amazon', 'active')")
+      .run('https://www.amazongamestudios.com/en-us/news', 'Amazon Games');
+    src = db.prepare("SELECT * FROM sources WHERE feed_type = 'amazon' LIMIT 1").get();
+    console.log('[Amazon] Created source:', src.title);
+  }
+  return src;
+}
+
+async function scrapeAmazonGames() {
+  const src = ensureAmazonSource();
+  try {
+    const res = await fetch(AMAZON_SCRAPE_URL, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+      timeout: 15000
+    });
+    if (!res.ok) {
+      console.log(`[Amazon] HTTP ${res.status} from ${AMAZON_SCRAPE_URL}`);
+      return [];
+    }
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    const insertStmt = db.prepare(`
+      INSERT OR IGNORE INTO articles (source_id, title, link, published_at, guid, fetch_method)
+      VALUES (?, ?, ?, ?, ?, 'scrape')
+    `);
+
+    const newArticles = [];
+    let foundOnPage = 0;
+
+    $('.ags-SlotModule').each((i, el) => {
+      const titleText = $(el).find('.ags-SlotModule-contentContainer-heading').text().trim();
+      if (!titleText) return;
+
+      const dateText = $(el).find('.ags-SlotModule-contentContainer-date').text().trim();
+
+      // Get the article link — the one wrapping the heading, containing "/articles/"
+      let href = null;
+      $(el).find('a.ags-SlotModule-slotLink[href*="/articles/"]').each((j, linkEl) => {
+        // Pick the link that contains the heading text (not image-only or "Read More")
+        const linkText = $(linkEl).text().trim();
+        if (linkText.includes(titleText.substring(0, 20))) {
+          href = $(linkEl).attr('href');
+        }
+      });
+      // Fallback: just grab the first article link if heading-match didn't work
+      if (!href) {
+        href = $(el).find('a.ags-SlotModule-slotLink[href*="/articles/"]').first().attr('href');
+      }
+      if (!href) return;
+
+      // Make absolute
+      const link = href.startsWith('http') ? href : 'https://www.amazongamestudios.com' + href;
+
+      // Parse date like "Mar 31, 2026" to ISO
+      let published = null;
+      if (dateText) {
+        const parsed = new Date(dateText);
+        if (!isNaN(parsed)) published = parsed.toISOString();
+      }
+
+      foundOnPage++;
+      const guid = 'amazon-scrape-' + link;
+
+      try {
+        const info = insertStmt.run(src.id, titleText, link, published, guid);
+        if (info.changes > 0) {
+          const art = db.prepare('SELECT * FROM articles WHERE rowid=?').get(info.lastInsertRowid);
+          if (art) newArticles.push({ ...art, source_title: src.title, feed_type: 'amazon' });
+        }
+      } catch (e) {}
+    });
+
+    if (foundOnPage === 0) {
+      console.log(`[Amazon] WARNING: 0 articles found on page — structure may have changed`);
+    } else {
+      console.log(`[Amazon] Scrape: found ${foundOnPage} on page, ${newArticles.length} new`);
+    }
+
+    return newArticles;
+  } catch (e) {
+    console.error(`[Amazon] Scrape error:`, e.message);
+    return [];
+  }
+}
+
+async function pollAmazonSitemap() {
+  const src = ensureAmazonSource();
+  try {
+    const res = await fetch(AMAZON_SITEMAP_URL, {
+      headers: { 'User-Agent': SCRAPE_UA },
+      timeout: 15000
+    });
+    if (!res.ok) {
+      console.log(`[Amazon] Sitemap HTTP ${res.status}`);
+      return [];
+    }
+    const xml = await res.text();
+    const $ = cheerio.load(xml, { xmlMode: true });
+
+    const insertStmt = db.prepare(`
+      INSERT OR IGNORE INTO articles (source_id, title, link, guid, fetch_method)
+      VALUES (?, ?, ?, ?, 'sitemap')
+    `);
+
+    const newArticles = [];
+    // Sitemap uses <url><loc> tags
+    $('url > loc').each((i, el) => {
+      const url = $(el).text().trim();
+      if (!url || !url.includes('/articles/')) return;
+
+      // Check if already in DB
+      const existing = db.prepare('SELECT id FROM articles WHERE link = ?').get(url);
+      if (existing) return;
+
+      // Extract title from URL slug: last path segment
+      const slug = url.replace(/\/$/, '').split('/').pop() || '';
+      const title = slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      if (!title) return;
+
+      const guid = 'amazon-sitemap-' + url;
+
+      try {
+        const info = insertStmt.run(src.id, title, url, guid);
+        if (info.changes > 0) {
+          const art = db.prepare('SELECT * FROM articles WHERE rowid=?').get(info.lastInsertRowid);
+          if (art) newArticles.push({ ...art, source_title: src.title, feed_type: 'amazon' });
+        }
+      } catch (e) {}
+    });
+
+    if (newArticles.length > 0) {
+      console.log(`[Amazon] Sitemap: +${newArticles.length} new articles`);
+    }
+
+    db.prepare("UPDATE sources SET last_polled_at=datetime('now') WHERE id=?").run(src.id);
+    return newArticles;
+  } catch (e) {
+    console.error(`[Amazon] Sitemap error:`, e.message);
+    return [];
+  }
+}
+
+// Amazon scrape loop — polls the news page every 60s
+async function amazonScrapeLoop() {
+  try {
+    const newArticles = await scrapeAmazonGames();
+    if (newArticles.length > 0) {
+      broadcast({ type: 'new_articles', articles: newArticles });
+      console.log(`[Amazon] +${newArticles.length} new from HTML scrape`);
+    }
+  } catch (e) {
+    console.error(`[Amazon] Scrape loop error:`, e.message);
+  }
+  setTimeout(amazonScrapeLoop, AMAZON_SCRAPE_INTERVAL);
+}
+amazonScrapeLoop();
+
+// Amazon sitemap loop — polls the sitemap every 120s to catch anything the page misses
+async function amazonSitemapLoop() {
+  try {
+    const newArticles = await pollAmazonSitemap();
+    if (newArticles.length > 0) {
+      broadcast({ type: 'new_articles', articles: newArticles });
+      console.log(`[Amazon] +${newArticles.length} new from sitemap`);
+    }
+  } catch (e) {
+    console.error(`[Amazon] Sitemap loop error:`, e.message);
+  }
+  setTimeout(amazonSitemapLoop, AMAZON_SITEMAP_INTERVAL);
+}
+amazonSitemapLoop();
 
 // ── Bluesky Integration (Wario64) ────────────────────────────────────────────
 
